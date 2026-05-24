@@ -1,0 +1,6 @@
+@api_scm_HostAddress = http://localhost:5264
+
+GET {{api_scm_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

@@ -1,0 +1,3 @@
+CREATE DATABASE scm_db;
+
+GRANT ALL PRIVILEGES ON DATABASE scm_db TO postgres;
