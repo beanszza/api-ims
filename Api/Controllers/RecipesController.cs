@@ -17,6 +17,13 @@ public class RecipesController : ControllerBase
         _recipeService = recipeService;
     }
 
+    [HttpGet]
+    public async Task<ActionResult<ApiResponse<IEnumerable<RecipeResponse>>>> GetAllRecipes()
+    {
+        var result = await _recipeService.GetAllRecipesAsync();
+        return result.Success ? Ok(result) : StatusCode(500, result);
+    }
+
     [HttpPost]
     public async Task<ActionResult<ApiResponse<RecipeResponse>>> CreateRecipe([FromBody] CreateRecipeRequest request)
     {

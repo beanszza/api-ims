@@ -8,6 +8,7 @@ public class StockTransfer
     public int DestLocationId { get; set; }
     public int TransferQuantity { get; set; }
     public string Status { get; set; } = string.Empty;
+    public DateTime TransferDate { get; set; } = DateTime.UtcNow;
 
     public FinishedProduct? Product { get; set; }
 
