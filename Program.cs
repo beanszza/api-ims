@@ -3,8 +3,98 @@ using Applications.Services;
 using Infrastructures.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// Helper functions (moved to top so they can be used early)
+static string ResolveScmConnectionString(IConfiguration configuration)
+{
+    var host = Environment.GetEnvironmentVariable("POSTGRES_DB_HOST");
+    if (!string.IsNullOrWhiteSpace(host))
+    {
+        var port = Environment.GetEnvironmentVariable("POSTGRES_DB_PORT");
+        if (string.IsNullOrWhiteSpace(port))
+            port = "5432";
+
+        var username = Environment.GetEnvironmentVariable("POSTGRES_USERNAME");
+        var password = Environment.GetEnvironmentVariable("POSTGRES_PASSWORD") ?? string.Empty;
+
+        var cs = $"Host={host};Port={port};Database=scm_db;Username={username};Password={password}";
+        return AppendNpgsqlSslModeForDevContainers(cs);
+    }
+
+    var configured = configuration.GetConnectionString("ScmDbConnection");
+    if (!string.IsNullOrWhiteSpace(configured))
+        return AppendNpgsqlSslModeForDevContainers(configured);
+
+    if (string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true",
+            StringComparison.OrdinalIgnoreCase))
+    {
+        host = "db";
+    }
+
+    var fallbackPort = Environment.GetEnvironmentVariable("POSTGRES_DB_PORT") ?? "5432";
+    var fallbackUsername = Environment.GetEnvironmentVariable("POSTGRES_USERNAME");
+    var fallbackPassword = Environment.GetEnvironmentVariable("POSTGRES_PASSWORD") ?? string.Empty;
+
+    if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(fallbackUsername))
+    {
+        throw new InvalidOperationException(
+            "ScmDbConnection is not configured. Set ConnectionStrings:ScmDbConnection, " +
+            "or POSTGRES_DB_HOST and POSTGRES_USERNAME (and POSTGRES_PASSWORD). " +
+            "For Docker Compose, set host to your Postgres service name (often \"db\") or set ConnectionStrings__ScmDbConnection on the service.");
+    }
+
+    var csFallback = $"Host={host};Port={fallbackPort};Database=scm_db;Username={fallbackUsername};Password={fallbackPassword}";
+    return AppendNpgsqlSslModeForDevContainers(csFallback);
+}
+
+static string AppendNpgsqlSslModeForDevContainers(string connectionString)
+{
+    if (string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true",
+            StringComparison.OrdinalIgnoreCase)
+        && connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase)
+        && !connectionString.Contains("SSL Mode", StringComparison.OrdinalIgnoreCase)
+        && !connectionString.Contains("Ssl Mode", StringComparison.OrdinalIgnoreCase))
+    {
+        return connectionString.TrimEnd(';') + ";SSL Mode=Disable";
+    }
+
+    return connectionString;
+}
+
+// Ensure database exists before running migrations
+try
+{
+    var connectionString = ResolveScmConnectionString(builder.Configuration);
+    var connBuilder = new NpgsqlConnectionStringBuilder(connectionString);
+    var dbName = connBuilder.Database;
+    connBuilder.Database = "postgres";
+    
+    using (var connection = new NpgsqlConnection(connBuilder.ConnectionString))
+    {
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"CREATE DATABASE \"{dbName}\" TEMPLATE template0;";
+        try 
+        { 
+            command.ExecuteNonQuery();
+            Console.WriteLine($"✓ Database '{dbName}' created successfully.");
+        } 
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ℹ Database '{dbName}' may already exist or error: {ex.Message}");
+        }
+    }
+    
+    // Give the database a moment to be ready
+    System.Threading.Thread.Sleep(1000);
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"⚠ Warning: Could not auto-create database: {ex.Message}");
+}
 
 builder.Services.AddControllers();
 builder.Services.AddOpenApi(options =>
@@ -87,14 +177,28 @@ if (app.Environment.IsDevelopment())
     {
         try
         {
+            Console.WriteLine("→ Attempting to run database migrations...");
             db.Database.Migrate();
-            migrateLogger.LogInformation("SCM database migrations applied.");
+            migrateLogger.LogInformation("✓ SCM database migrations applied.");
             isDbReady = true;
         }
         catch (Exception ex)
         {
-            migrateLogger.LogError(ex,
-                "SCM database Migrate() failed. API will start; fix the connection and restart, or run migrations manually.");
+            migrateLogger.LogError(ex, "✗ Migrations failed, trying EnsureCreated()...");
+            Console.WriteLine($"✗ Migrations failed: {ex.Message}");
+            
+            try
+            {
+                Console.WriteLine("→ Fallback: Running EnsureCreated()...");
+                db.Database.EnsureCreated();
+                migrateLogger.LogInformation("✓ Database schema created via EnsureCreated().");
+                isDbReady = true;
+            }
+            catch (Exception ex2)
+            {
+                migrateLogger.LogError(ex2, "✗ EnsureCreated() also failed.");
+                Console.WriteLine($"✗ EnsureCreated() failed: {ex2.Message}");
+            }
         }
     }
 
@@ -105,16 +209,19 @@ if (app.Environment.IsDevelopment())
             // Seed Master Data if empty
             if (!db.Categories.Any())
             {
+                Console.WriteLine("→ Seeding Categories...");
                 db.Categories.AddRange(
                     new Domains.Entities.Category { CategoryName = "Raw Materials", Description = "Raw materials for production" },
                     new Domains.Entities.Category { CategoryName = "Tools and Supplies", Description = "Tools and supplies used in operations" }
                 );
                 db.SaveChanges();
-                migrateLogger.LogInformation("Categories seeded successfully.");
+                migrateLogger.LogInformation("✓ Categories seeded successfully.");
+                Console.WriteLine("✓ Categories seeded.");
             }
 
             if (!db.UnitOfMeasures.Any())
             {
+                Console.WriteLine("→ Seeding Unit of Measures...");
                 db.UnitOfMeasures.AddRange(
                     new Domains.Entities.UnitOfMeasure { Name = "Kilogram", Abbreviation = "kg" },
                     new Domains.Entities.UnitOfMeasure { Name = "Piece", Abbreviation = "pcs" },
@@ -122,26 +229,32 @@ if (app.Environment.IsDevelopment())
                     new Domains.Entities.UnitOfMeasure { Name = "Meter", Abbreviation = "m" }
                 );
                 db.SaveChanges();
-                migrateLogger.LogInformation("Unit of Measures seeded successfully.");
+                migrateLogger.LogInformation("✓ Unit of Measures seeded successfully.");
+                Console.WriteLine("✓ Unit of Measures seeded.");
             }
 
             if (!db.Locations.Any())
             {
+                Console.WriteLine("→ Seeding Locations...");
                 db.Locations.Add(new Domains.Entities.Location { LocationName = "Main Warehouse", LocationType = "Storage" });
                 db.SaveChanges();
-                migrateLogger.LogInformation("Locations seeded successfully.");
+                migrateLogger.LogInformation("✓ Locations seeded successfully.");
+                Console.WriteLine("✓ Locations seeded.");
             }
 
             if (!db.Drivers.Any())
             {
+                Console.WriteLine("→ Seeding Drivers...");
                 db.Drivers.Add(new Domains.Entities.Driver { DriverName = "Default Driver", Number = "DRV-001" });
                 db.SaveChanges();
-                migrateLogger.LogInformation("Drivers seeded successfully.");
+                migrateLogger.LogInformation("✓ Drivers seeded successfully.");
+                Console.WriteLine("✓ Drivers seeded.");
             }
 
             // Seed a test Item and FinishedProduct so you can test Recipes
             if (!db.FinishedProducts.Any())
             {
+                Console.WriteLine("→ Seeding Test Finished Product...");
                 var testItem = new Domains.Entities.Item
                 {
                     ItemName = "Test Final Product",
@@ -161,12 +274,16 @@ if (app.Environment.IsDevelopment())
                     Sku = "TEST-SKU-001"
                 });
                 db.SaveChanges();
-                migrateLogger.LogInformation("Test Finished Product seeded successfully.");
+                migrateLogger.LogInformation("✓ Test Finished Product seeded successfully.");
+                Console.WriteLine("✓ Test Finished Product seeded.");
             }
+            
+            Console.WriteLine("✓ All database initialization completed successfully!");
         }
         catch (Exception ex)
         {
-            migrateLogger.LogError(ex, "Failed to seed SCM master data.");
+            migrateLogger.LogError(ex, "✗ Failed to seed SCM master data.");
+            Console.WriteLine($"✗ Seeding failed: {ex.Message}");
         }
     }
 }
@@ -187,59 +304,3 @@ if (app.Environment.IsDevelopment())
 app.MapControllers();
 
 app.Run();
-
-static string ResolveScmConnectionString(IConfiguration configuration)
-{
-    var host = Environment.GetEnvironmentVariable("POSTGRES_DB_HOST");
-    if (!string.IsNullOrWhiteSpace(host))
-    {
-        var port = Environment.GetEnvironmentVariable("POSTGRES_DB_PORT");
-        if (string.IsNullOrWhiteSpace(port))
-            port = "5432";
-
-        var username = Environment.GetEnvironmentVariable("POSTGRES_USERNAME");
-        var password = Environment.GetEnvironmentVariable("POSTGRES_PASSWORD") ?? string.Empty;
-
-        var cs = $"Host={host};Port={port};Database=scm_db;Username={username};Password={password}";
-        return AppendNpgsqlSslModeForDevContainers(cs);
-    }
-
-    var configured = configuration.GetConnectionString("ScmDbConnection");
-    if (!string.IsNullOrWhiteSpace(configured))
-        return AppendNpgsqlSslModeForDevContainers(configured);
-
-    if (string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true",
-            StringComparison.OrdinalIgnoreCase))
-    {
-        host = "db";
-    }
-
-    var fallbackPort = Environment.GetEnvironmentVariable("POSTGRES_DB_PORT") ?? "5432";
-    var fallbackUsername = Environment.GetEnvironmentVariable("POSTGRES_USERNAME");
-    var fallbackPassword = Environment.GetEnvironmentVariable("POSTGRES_PASSWORD") ?? string.Empty;
-
-    if (string.IsNullOrWhiteSpace(host) || string.IsNullOrWhiteSpace(fallbackUsername))
-    {
-        throw new InvalidOperationException(
-            "ScmDbConnection is not configured. Set ConnectionStrings:ScmDbConnection, " +
-            "or POSTGRES_DB_HOST and POSTGRES_USERNAME (and POSTGRES_PASSWORD). " +
-            "For Docker Compose, set host to your Postgres service name (often \"db\") or set ConnectionStrings__ScmDbConnection on the service.");
-    }
-
-    var csFallback = $"Host={host};Port={fallbackPort};Database=scm_db;Username={fallbackUsername};Password={fallbackPassword}";
-    return AppendNpgsqlSslModeForDevContainers(csFallback);
-}
-
-static string AppendNpgsqlSslModeForDevContainers(string connectionString)
-{
-    if (string.Equals(Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER"), "true",
-            StringComparison.OrdinalIgnoreCase)
-        && connectionString.Contains("Host=", StringComparison.OrdinalIgnoreCase)
-        && !connectionString.Contains("SSL Mode", StringComparison.OrdinalIgnoreCase)
-        && !connectionString.Contains("Ssl Mode", StringComparison.OrdinalIgnoreCase))
-    {
-        return connectionString.TrimEnd(';') + ";SSL Mode=Disable";
-    }
-
-    return connectionString;
-}
