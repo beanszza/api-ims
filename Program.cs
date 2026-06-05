@@ -44,6 +44,9 @@ builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddScoped<IRecipeService, RecipeService>();
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
+builder.Services.AddScoped<IStockTransferService, StockTransferService>();
+builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<IFinishedProductService, FinishedProductService>();
 
 builder.Services.AddCors(options =>
 {
@@ -134,6 +137,31 @@ if (app.Environment.IsDevelopment())
                 db.Drivers.Add(new Domains.Entities.Driver { DriverName = "Default Driver", Number = "DRV-001" });
                 db.SaveChanges();
                 migrateLogger.LogInformation("Drivers seeded successfully.");
+            }
+
+            // Seed a test Item and FinishedProduct so you can test Recipes
+            if (!db.FinishedProducts.Any())
+            {
+                var testItem = new Domains.Entities.Item
+                {
+                    ItemName = "Test Final Product",
+                    UomId = 2, // pcs
+                    CategoryId = 1, // Raw Materials (or Finished Goods if you had it)
+                    MinStockLevel = 0,
+                    MaxStockLevel = 100,
+                    IsActive = true
+                };
+                db.Items.Add(testItem);
+                db.SaveChanges(); // get ItemId
+
+                db.FinishedProducts.Add(new Domains.Entities.FinishedProduct
+                {
+                    ItemId = testItem.ItemId,
+                    SellingPrice = 19.99m,
+                    Sku = "TEST-SKU-001"
+                });
+                db.SaveChanges();
+                migrateLogger.LogInformation("Test Finished Product seeded successfully.");
             }
         }
         catch (Exception ex)

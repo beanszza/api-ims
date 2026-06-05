@@ -22,6 +22,42 @@ public class RecipeService : IRecipeService
         _logger = logger;
     }
 
+    public async Task<ApiResponse<IEnumerable<RecipeResponse>>> GetAllRecipesAsync()
+    {
+        try
+        {
+            var recipes = await _context.Recipes
+                .Include(r => r.RecipeIngredients)
+                    .ThenInclude(ri => ri.Item)
+                .Include(r => r.RecipeIngredients)
+                    .ThenInclude(ri => ri.Uom)
+                .Include(r => r.Product)
+                .Select(r => new RecipeResponse
+                {
+                    RecipeId = r.RecipeId,
+                    ProductId = r.ProductId,
+                    OutputQuantity = r.OutputQuantity,
+                    Notes = r.Notes,
+                    IsActive = r.IsActive,
+                    Ingredients = r.RecipeIngredients.Select(ri => new RecipeIngredientResponse
+                    {
+                        IngredientId = ri.IngredientId,
+                        ItemId = ri.ItemId,
+                        UomId = ri.UomId,
+                        StandardQuantity = ri.StandardQuantity
+                    }).ToList()
+                })
+                .ToListAsync();
+
+            return ApiResponse<IEnumerable<RecipeResponse>>.SuccessResponse(recipes);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching recipes.");
+            return ApiResponse<IEnumerable<RecipeResponse>>.FailureResponse("An error occurred while fetching recipes.");
+        }
+    }
+
     public async Task<ApiResponse<RecipeResponse>> CreateRecipeAsync(CreateRecipeRequest request)
     {
         try
