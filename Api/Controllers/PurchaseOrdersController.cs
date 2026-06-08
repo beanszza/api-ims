@@ -43,7 +43,7 @@ public class PurchaseOrdersController : ControllerBase
     }
 
     [HttpPost("{id}/upload-receipt")]
-    public async Task<ActionResult<ApiResponse<PurchaseOrderResponse>>> UploadReceipt([FromRoute] int id, IFormFile file)
+    public async Task<ActionResult<ApiResponse<PurchaseOrderResponse>>> UploadReceipt([FromRoute] int id, [FromForm] IFormFile file)
     {
         var result = await _purchaseOrderService.UploadReceiptAsync(id, file);
         return result.Success ? Ok(result) : BadRequest(result);
