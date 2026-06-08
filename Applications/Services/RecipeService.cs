@@ -241,4 +241,31 @@ public class RecipeService : IRecipeService
             return ApiResponse<RecipeResponse>.FailureResponse($"An error occurred: {ex.Message}");
         }
     }
+
+    public async Task<ApiResponse<EmptyPayload>> DeleteRecipeAsync(int id)
+    {
+        try
+        {
+            _logger.LogInformation("Deleting recipe with ID {RecipeId}", id);
+            var recipe = await _context.Recipes
+                .Include(r => r.RecipeIngredients)
+                .FirstOrDefaultAsync(r => r.RecipeId == id);
+
+            if (recipe == null)
+            {
+                return ApiResponse<EmptyPayload>.FailureResponse($"Recipe with ID {id} not found.");
+            }
+
+            _context.Recipes.Remove(recipe);
+            await _context.SaveChangesAsync();
+
+            _logger.LogInformation("Recipe with ID {RecipeId} deleted successfully", id);
+            return ApiResponse<EmptyPayload>.SuccessResponse(new EmptyPayload(), "Recipe deleted successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Error deleting recipe: {Message}", ex.Message);
+            return ApiResponse<EmptyPayload>.FailureResponse($"An error occurred: {ex.Message}");
+        }
+    }
 }

@@ -219,15 +219,33 @@ if (app.Environment.IsDevelopment())
                 Console.WriteLine("✓ Categories seeded.");
             }
 
-            if (!db.UnitOfMeasures.Any())
+            // Ensure all target Unit of Measures exist in the database
+            var existingUoms = db.UnitOfMeasures.ToList();
+            var targetUoms = new List<Domains.Entities.UnitOfMeasure>
             {
-                Console.WriteLine("→ Seeding Unit of Measures...");
-                db.UnitOfMeasures.AddRange(
-                    new Domains.Entities.UnitOfMeasure { Name = "Kilogram", Abbreviation = "kg" },
-                    new Domains.Entities.UnitOfMeasure { Name = "Piece", Abbreviation = "pcs" },
-                    new Domains.Entities.UnitOfMeasure { Name = "Litre", Abbreviation = "L" },
-                    new Domains.Entities.UnitOfMeasure { Name = "Meter", Abbreviation = "m" }
-                );
+                new() { Name = "Kilogram", Abbreviation = "kg" },
+                new() { Name = "Piece", Abbreviation = "pcs" },
+                new() { Name = "Litre", Abbreviation = "L" },
+                new() { Name = "Meter", Abbreviation = "m" },
+                new() { Name = "Gram", Abbreviation = "g" },
+                new() { Name = "Box", Abbreviation = "box" },
+                new() { Name = "Pack", Abbreviation = "pack" },
+                new() { Name = "Roll", Abbreviation = "roll" },
+                new() { Name = "Bottle", Abbreviation = "bottle" }
+            };
+
+            bool uomAdded = false;
+            foreach (var uom in targetUoms)
+            {
+                if (!existingUoms.Any(u => u.Abbreviation.Equals(uom.Abbreviation, StringComparison.OrdinalIgnoreCase)))
+                {
+                    db.UnitOfMeasures.Add(uom);
+                    uomAdded = true;
+                }
+            }
+
+            if (uomAdded)
+            {
                 db.SaveChanges();
                 migrateLogger.LogInformation("✓ Unit of Measures seeded successfully.");
                 Console.WriteLine("✓ Unit of Measures seeded.");
@@ -276,6 +294,58 @@ if (app.Environment.IsDevelopment())
                 db.SaveChanges();
                 migrateLogger.LogInformation("✓ Test Finished Product seeded successfully.");
                 Console.WriteLine("✓ Test Finished Product seeded.");
+            }
+
+            if (!db.FinishedProducts.Any(fp => fp.Item != null && fp.Item.ItemName == "Ube Halaya"))
+            {
+                Console.WriteLine("→ Seeding Ube Halaya Finished Product...");
+                var ubeHalayaItem = new Domains.Entities.Item
+                {
+                    ItemName = "Ube Halaya",
+                    UomId = 2, // pcs
+                    CategoryId = 1,
+                    MinStockLevel = 0,
+                    MaxStockLevel = 100,
+                    IsActive = true
+                };
+                db.Items.Add(ubeHalayaItem);
+                db.SaveChanges();
+
+                db.FinishedProducts.Add(new Domains.Entities.FinishedProduct
+                {
+                    ItemId = ubeHalayaItem.ItemId,
+                    SellingPrice = 150.00m,
+                    Sku = "UBE-HALAYA-001"
+                });
+                db.SaveChanges();
+                migrateLogger.LogInformation("✓ Ube Halaya Finished Product seeded successfully.");
+                Console.WriteLine("✓ Ube Halaya Finished Product seeded.");
+            }
+
+            if (!db.FinishedProducts.Any(fp => fp.Item != null && fp.Item.ItemName == "Ube Jam"))
+            {
+                Console.WriteLine("→ Seeding Ube Jam Finished Product...");
+                var ubeJamItem = new Domains.Entities.Item
+                {
+                    ItemName = "Ube Jam",
+                    UomId = 2, // pcs
+                    CategoryId = 1,
+                    MinStockLevel = 0,
+                    MaxStockLevel = 100,
+                    IsActive = true
+                };
+                db.Items.Add(ubeJamItem);
+                db.SaveChanges();
+
+                db.FinishedProducts.Add(new Domains.Entities.FinishedProduct
+                {
+                    ItemId = ubeJamItem.ItemId,
+                    SellingPrice = 120.00m,
+                    Sku = "UBE-JAM-001"
+                });
+                db.SaveChanges();
+                migrateLogger.LogInformation("✓ Ube Jam Finished Product seeded successfully.");
+                Console.WriteLine("✓ Ube Jam Finished Product seeded.");
             }
             
             Console.WriteLine("✓ All database initialization completed successfully!");

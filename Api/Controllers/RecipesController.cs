@@ -38,5 +38,12 @@ public class RecipesController : ControllerBase
     {
         var result = await _recipeService.UpdateRecipeAsync(id, request);
         return result.Success ? Ok(result) : StatusCode(400, result);
+     }
+
+    [HttpDelete("{id}")]
+    public async Task<ActionResult<ApiResponse<EmptyPayload>>> DeleteRecipe([FromRoute] int id)
+    {
+        var result = await _recipeService.DeleteRecipeAsync(id);
+        return result.Success ? Ok(result) : StatusCode(400, result);
     }
 }

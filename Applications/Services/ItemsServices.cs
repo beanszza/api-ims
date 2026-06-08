@@ -149,6 +149,14 @@ public class ItemService : IItemService
         {
             _logger.LogInformation($"Creating new item: {request.ItemName}");
 
+            // Validate duplicate name
+            var normalizedName = request.ItemName.Trim().ToLower();
+            var nameExists = await _context.Items.AnyAsync(i => i.ItemName.Trim().ToLower() == normalizedName);
+            if (nameExists)
+            {
+                return ApiResponse<ItemResponse>.FailureResponse("An item with this name already exists.");
+            }
+
             // Validate UOM and Category exist
             var uomExists = await _context.UnitOfMeasures.AnyAsync(u => u.UomId == request.UomId);
 
@@ -221,6 +229,17 @@ public class ItemService : IItemService
             {
                 _logger.LogWarning($"Item with ID {id} not found");
                 return ApiResponse<ItemResponse>.FailureResponse("Item not found");
+            }
+
+            // Validate duplicate name if it's changing
+            if (request.ItemName != null && !request.ItemName.Equals(item.ItemName, StringComparison.OrdinalIgnoreCase))
+            {
+                var normalizedName = request.ItemName.Trim().ToLower();
+                var nameExists = await _context.Items.AnyAsync(i => i.ItemName.Trim().ToLower() == normalizedName && i.ItemId != id);
+                if (nameExists)
+                {
+                    return ApiResponse<ItemResponse>.FailureResponse("An item with this name already exists.");
+                }
             }
 
             // Validate references if they're being updated
