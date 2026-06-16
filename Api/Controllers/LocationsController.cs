@@ -19,9 +19,9 @@ public class LocationsController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<IEnumerable<LocationResponse>>>> GetAllLocations()
+    public async Task<ActionResult<ApiResponse<PagedData<LocationResponse>>>> GetAllLocations([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var result = await _locationService.GetAllLocationsAsync();
+        var result = await _locationService.GetAllLocationsAsync(page, pageSize);
         return result.Success ? Ok(result) : StatusCode(400, result);
     }
 

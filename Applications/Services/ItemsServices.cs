@@ -23,7 +23,7 @@ public class ItemService : IItemService
         _logger = logger;
     }
 
-    public async Task<ApiResponse<IEnumerable<ItemResponse>>> GetAllItemsAsync(string? search = null, string? category = null, bool? isActive = null, string? sort = "asc")
+    public async Task<ApiResponse<PagedData<ItemResponse>>> GetAllItemsAsync(string? search = null, string? category = null, bool? isActive = null, string? sort = "asc", int page = 1, int pageSize = 10)
     {
         try
         {
@@ -31,7 +31,7 @@ public class ItemService : IItemService
 
             if (search != null && search.Length > 200)
             {
-                return ApiResponse<IEnumerable<ItemResponse>>.FailureResponse("Search query cannot exceed 200 characters.");
+                return ApiResponse<PagedData<ItemResponse>>.FailureResponse("Search query cannot exceed 200 characters.");
             }
 
             var query = _context.Items.AsQueryable();
@@ -90,12 +90,23 @@ public class ItemService : IItemService
                 items = items.OrderBy(i => i.ItemName).ToList();
             }
 
-            return ApiResponse<IEnumerable<ItemResponse>>.SuccessResponse(items);
+            var totalCount = items.Count;
+            var pagedItems = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+            var pagedData = new PagedData<ItemResponse>
+            {
+                Items = pagedItems,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            };
+
+            return ApiResponse<PagedData<ItemResponse>>.SuccessResponse(pagedData);
         }
         catch (Exception ex)
         {
             _logger.LogError($"Error fetching items: {ex.Message}");
-            return ApiResponse<IEnumerable<ItemResponse>>.FailureResponse($"An error occurred: {ex.Message}");
+            return ApiResponse<PagedData<ItemResponse>>.FailureResponse($"An error occurred: {ex.Message}");
         }
     }
 

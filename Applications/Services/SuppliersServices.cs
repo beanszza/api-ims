@@ -24,7 +24,7 @@ public class SupplierService : ISupplierService
         _logger = logger;
     }
 
-    public async Task<ApiResponse<IEnumerable<SupplierResponse>>> GetAllSuppliersAsync(string? supplierName = null, bool? isActive = null)
+    public async Task<ApiResponse<PagedData<SupplierResponse>>> GetAllSuppliersAsync(string? supplierName = null, bool? isActive = null, int page = 1, int pageSize = 10)
     {
         try
         {
@@ -42,6 +42,7 @@ public class SupplierService : ISupplierService
                 query = query.Where(s => s.IsActive == isActive.Value);
             }
 
+            var totalCount = await query.CountAsync();
             var suppliers = await query
                 .Select(s => new SupplierResponse
                 {
@@ -52,15 +53,25 @@ public class SupplierService : ISupplierService
                     Phone = s.Phone,
                     IsActive = s.IsActive
                 })
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
+            var pagedData = new PagedData<SupplierResponse>
+            {
+                Items = suppliers,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            };
+
             _logger.LogInformation($"Successfully fetched {suppliers.Count} suppliers");
-            return ApiResponse<IEnumerable<SupplierResponse>>.SuccessResponse(suppliers);
+            return ApiResponse<PagedData<SupplierResponse>>.SuccessResponse(pagedData);
         }
         catch (Exception ex)
         {
             _logger.LogError($"Error fetching suppliers: {ex.Message}");
-            return ApiResponse<IEnumerable<SupplierResponse>>.FailureResponse($"An error occurred: {ex.Message}");
+            return ApiResponse<PagedData<SupplierResponse>>.FailureResponse($"An error occurred: {ex.Message}");
         }
     }
 

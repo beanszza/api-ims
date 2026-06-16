@@ -23,11 +23,30 @@ public class StockTransferService : IStockTransferService
         _logger = logger;
     }
 
-    public async Task<ApiResponse<IEnumerable<StockTransferResponse>>> GetAllTransfersAsync()
+    public async Task<ApiResponse<PagedData<StockTransferResponse>>> GetAllTransfersAsync(string? status = null, string? search = null, int page = 1, int pageSize = 10)
     {
         try
         {
-            var transfers = await _context.StockTransfers
+            var query = _context.StockTransfers.AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(status) && !status.Equals("All", StringComparison.OrdinalIgnoreCase))
+            {
+                query = query.Where(st => st.Status.ToLower() == status.ToLower());
+            }
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var lowerSearch = search.ToLower();
+                query = query.Where(st => 
+                    st.TransferId.ToString().Contains(lowerSearch) ||
+                    (st.Product != null && st.Product.Item != null && st.Product.Item.ItemName.ToLower().Contains(lowerSearch)) ||
+                    (st.SourceLocation != null && st.SourceLocation.LocationName.ToLower().Contains(lowerSearch)) ||
+                    (st.DestLocation != null && st.DestLocation.LocationName.ToLower().Contains(lowerSearch))
+                );
+            }
+
+            var totalCount = await query.CountAsync();
+            var transfers = await query
                 .Include(st => st.Product)
                     .ThenInclude(p => p.Item)
                 .Include(st => st.SourceLocation)
@@ -46,14 +65,24 @@ public class StockTransferService : IStockTransferService
                     Status = st.Status,
                     TransferDate = st.TransferDate
                 })
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
-            return ApiResponse<IEnumerable<StockTransferResponse>>.SuccessResponse(transfers);
+            var pagedData = new PagedData<StockTransferResponse>
+            {
+                Items = transfers,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            };
+
+            return ApiResponse<PagedData<StockTransferResponse>>.SuccessResponse(pagedData);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error fetching stock transfers.");
-            return ApiResponse<IEnumerable<StockTransferResponse>>.FailureResponse("An error occurred while fetching transfers.");
+            return ApiResponse<PagedData<StockTransferResponse>>.FailureResponse("An error occurred while fetching transfers.");
         }
     }
 
@@ -309,7 +338,7 @@ public class StockTransferService : IStockTransferService
         }
     }
 
-    public async Task<ApiResponse<IEnumerable<TransferHistoryResponse>>> GetTransferHistoryAsync(string? status = null, DateTime? fromDate = null, DateTime? toDate = null)
+    public async Task<ApiResponse<PagedData<TransferHistoryResponse>>> GetTransferHistoryAsync(string? status = null, DateTime? fromDate = null, DateTime? toDate = null, int page = 1, int pageSize = 10)
     {
         try
         {
@@ -321,7 +350,12 @@ public class StockTransferService : IStockTransferService
             if (toDate.HasValue)
                 query = query.Where(a => a.Timestamp <= toDate.Value);
 
-            var logs = await query.OrderByDescending(a => a.Timestamp).ToListAsync();
+            var totalCount = await query.CountAsync();
+            var logs = await query
+                .OrderByDescending(a => a.Timestamp)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
 
             var result = logs.Select(l => new TransferHistoryResponse
             {
@@ -335,12 +369,20 @@ public class StockTransferService : IStockTransferService
                 UserId = l.UserId
             });
 
-            return ApiResponse<IEnumerable<TransferHistoryResponse>>.SuccessResponse(result);
+            var pagedData = new PagedData<TransferHistoryResponse>
+            {
+                Items = result,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            };
+
+            return ApiResponse<PagedData<TransferHistoryResponse>>.SuccessResponse(pagedData);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error fetching transfer history.");
-            return ApiResponse<IEnumerable<TransferHistoryResponse>>.FailureResponse("An error occurred while fetching transfer history.");
+            return ApiResponse<PagedData<TransferHistoryResponse>>.FailureResponse("An error occurred while fetching transfer history.");
         }
     }
 }

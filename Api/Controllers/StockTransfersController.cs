@@ -19,9 +19,9 @@ public class StockTransfersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<IEnumerable<StockTransferResponse>>>> GetAllTransfers()
+    public async Task<ActionResult<ApiResponse<PagedData<StockTransferResponse>>>> GetAllTransfers([FromQuery] string? status = null, [FromQuery] string? search = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var result = await _stockTransferService.GetAllTransfersAsync();
+        var result = await _stockTransferService.GetAllTransfersAsync(status, search, page, pageSize);
         return result.Success ? Ok(result) : StatusCode(400, result);
     }
 
@@ -49,24 +49,26 @@ public class StockTransfersController : ControllerBase
     }
 
     [HttpGet("history")]
-    public async Task<ActionResult<ApiResponse<IEnumerable<TransferHistoryResponse>>>> GetTransferHistory([FromQuery] string? status, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
+    public async Task<ActionResult<ApiResponse<PagedData<TransferHistoryResponse>>>> GetTransferHistory([FromQuery] string? status, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var result = await _stockTransferService.GetTransferHistoryAsync(status, fromDate, toDate);
+        var result = await _stockTransferService.GetTransferHistoryAsync(status, fromDate, toDate, page, pageSize);
         return result.Success ? Ok(result) : StatusCode(400, result);
     }
 
     [HttpGet("export-history")]
     public async Task<IActionResult> ExportTransferHistoryCsv([FromQuery] string? status, [FromQuery] DateTime? fromDate, [FromQuery] DateTime? toDate)
     {
-        var result = await _stockTransferService.GetTransferHistoryAsync(status, fromDate, toDate);
+        // For CSV export, we fetch all data by passing max values (or we can use the non-paged if service allowed it).
+        // Passing page=1, pageSize=int.MaxValue to get all logs
+        var result = await _stockTransferService.GetTransferHistoryAsync(status, fromDate, toDate, 1, int.MaxValue);
         
-        if (!result.Success || result.Data == null)
+        if (!result.Success || result.Data == null || result.Data.Items == null)
             return BadRequest(result);
 
         var builder = new System.Text.StringBuilder();
         builder.AppendLine("LogId,TransferId,Action,FieldName,OldValue,NewValue,Timestamp,UserId");
 
-        foreach (var log in result.Data)
+        foreach (var log in result.Data.Items)
         {
             builder.AppendLine($"{log.LogId},{log.TransferId},{log.Action},{log.FieldName},{log.OldValue},{log.NewValue},{log.Timestamp:yyyy-MM-dd HH:mm:ss},{log.UserId}");
         }

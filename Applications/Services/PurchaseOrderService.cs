@@ -107,7 +107,7 @@ public class PurchaseOrderService : IPurchaseOrderService
         }
     }
 
-    public async Task<ApiResponse<IEnumerable<PurchaseOrderResponse>>> GetPurchaseOrdersAsync(string? status = null)
+    public async Task<ApiResponse<PagedData<PurchaseOrderResponse>>> GetPurchaseOrdersAsync(string? status = null, string? search = null, int page = 1, int pageSize = 10)
     {
         try
         {
@@ -124,15 +124,37 @@ public class PurchaseOrderService : IPurchaseOrderService
                 query = query.Where(o => o.Status.ToLower() == status.ToLower());
             }
 
-            var orders = await query.ToListAsync();
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                var lowerSearch = search.ToLower();
+                query = query.Where(o => 
+                    o.PoId.ToString().Contains(lowerSearch) || 
+                    (o.Supplier != null && o.Supplier.CompanyName.ToLower().Contains(lowerSearch)) ||
+                    o.PurchaseOrderItems.Any(poi => poi.Item != null && poi.Item.ItemName.ToLower().Contains(lowerSearch))
+                );
+            }
+
+            var totalCount = await query.CountAsync();
+            var orders = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
             var responses = orders.Select(MapToResponse);
 
-            return ApiResponse<IEnumerable<PurchaseOrderResponse>>.SuccessResponse(responses);
+            var pagedData = new PagedData<PurchaseOrderResponse>
+            {
+                Items = responses,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            };
+
+            return ApiResponse<PagedData<PurchaseOrderResponse>>.SuccessResponse(pagedData);
         }
         catch (Exception ex)
         {
             _logger.LogError("Error retrieving purchase orders: {Message}", ex.Message);
-            return ApiResponse<IEnumerable<PurchaseOrderResponse>>.FailureResponse($"An error occurred: {ex.Message}");
+            return ApiResponse<PagedData<PurchaseOrderResponse>>.FailureResponse($"An error occurred: {ex.Message}");
         }
     }
 
@@ -359,7 +381,7 @@ public class PurchaseOrderService : IPurchaseOrderService
         }
     }
 
-    public async Task<ApiResponse<IEnumerable<TransactionHistoryResponse>>> GetTransactionHistoryAsync(string? filterType = null, DateTime? specificDate = null)
+    public async Task<ApiResponse<PagedData<TransactionHistoryResponse>>> GetTransactionHistoryAsync(string? filterType = null, DateTime? specificDate = null, int page = 1, int pageSize = 10)
     {
         try
         {
@@ -372,15 +394,27 @@ public class PurchaseOrderService : IPurchaseOrderService
 
             query = ApplyFilter(query, filterType, specificDate);
 
-            var logs = await query.ToListAsync();
+            var totalCount = await query.CountAsync();
+            var logs = await query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
             var responses = logs.Select(MapToTransactionResponse);
 
-            return ApiResponse<IEnumerable<TransactionHistoryResponse>>.SuccessResponse(responses);
+            var pagedData = new PagedData<TransactionHistoryResponse>
+            {
+                Items = responses,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            };
+
+            return ApiResponse<PagedData<TransactionHistoryResponse>>.SuccessResponse(pagedData);
         }
         catch (Exception ex)
         {
             _logger.LogError("Error retrieving transaction history: {Message}", ex.Message);
-            return ApiResponse<IEnumerable<TransactionHistoryResponse>>.FailureResponse($"An error occurred: {ex.Message}");
+            return ApiResponse<PagedData<TransactionHistoryResponse>>.FailureResponse($"An error occurred: {ex.Message}");
         }
     }
 

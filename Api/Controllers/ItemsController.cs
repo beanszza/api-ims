@@ -39,13 +39,15 @@ public class ItemsController : ControllerBase
 
 
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<IEnumerable<ItemResponse>>>> GetAllItems(
+    public async Task<ActionResult<ApiResponse<PagedData<ItemResponse>>>> GetAllItems(
         [FromQuery] string? search = null,
         [FromQuery] string? category = null,
         [FromQuery] bool? isActive = null,
-        [FromQuery] string? sort = "asc")
+        [FromQuery] string? sort = "asc",
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
     {
-        var result = await _itemService.GetAllItemsAsync(search, category, isActive, sort);
+        var result = await _itemService.GetAllItemsAsync(search, category, isActive, sort, page, pageSize);
         return result.Success ? Ok(result) : StatusCode(500, result);
     }
 

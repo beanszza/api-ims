@@ -23,10 +23,11 @@ public class LocationService : ILocationService
         _logger = logger;
     }
 
-    public async Task<ApiResponse<IEnumerable<LocationResponse>>> GetAllLocationsAsync()
+    public async Task<ApiResponse<PagedData<LocationResponse>>> GetAllLocationsAsync(int page = 1, int pageSize = 10)
     {
         try
         {
+            var totalCount = await _context.Locations.CountAsync();
             var locations = await _context.Locations
                 .Select(l => new LocationResponse
                 {
@@ -35,14 +36,24 @@ public class LocationService : ILocationService
                     LocationType = l.LocationType,
                     Status = l.Status
                 })
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
-            return ApiResponse<IEnumerable<LocationResponse>>.SuccessResponse(locations);
+            var pagedData = new PagedData<LocationResponse>
+            {
+                Items = locations,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            };
+
+            return ApiResponse<PagedData<LocationResponse>>.SuccessResponse(pagedData);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error fetching locations.");
-            return ApiResponse<IEnumerable<LocationResponse>>.FailureResponse("An error occurred while fetching locations.");
+            return ApiResponse<PagedData<LocationResponse>>.FailureResponse("An error occurred while fetching locations.");
         }
     }
 

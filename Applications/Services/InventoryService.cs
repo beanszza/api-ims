@@ -21,11 +21,35 @@ public class InventoryService : IInventoryService
         _logger = logger;
     }
 
-    public async Task<ApiResponse<IEnumerable<InventoryResponse>>> GetAllInventoriesAsync()
+    public async Task<ApiResponse<PagedData<InventoryResponse>>> GetAllInventoriesAsync(string? categoryName = null, int page = 1, int pageSize = 10)
     {
         try
         {
-            var inventories = await _context.Inventories
+            var query = _context.Inventories.AsQueryable();
+
+            if (!string.IsNullOrWhiteSpace(categoryName))
+            {
+                // To support 'Raw Materials', 'Tools', 'Finished Goods' matching:
+                if (categoryName.ToLower().Contains("raw material"))
+                {
+                    query = query.Where(i => i.Item != null && i.Item.Category != null && i.Item.Category.CategoryName.ToLower().Contains("raw material"));
+                }
+                else if (categoryName.ToLower().Contains("tool"))
+                {
+                    query = query.Where(i => i.Item != null && i.Item.Category != null && (i.Item.Category.CategoryName.ToLower().Contains("tool") || i.Item.Category.CategoryName.ToLower().Contains("equipment")));
+                }
+                else if (categoryName.ToLower().Contains("finished good"))
+                {
+                    query = query.Where(i => i.Item != null && i.Item.Category != null && (i.Item.Category.CategoryName.ToLower().Contains("finished good") || i.Item.Category.CategoryName.ToLower().Contains("product")));
+                }
+                else
+                {
+                    query = query.Where(i => i.Item != null && i.Item.Category != null && i.Item.Category.CategoryName.ToLower().Contains(categoryName.ToLower()));
+                }
+            }
+
+            var totalCount = await query.CountAsync();
+            var inventories = await query
                 .Include(i => i.Item)
                     .ThenInclude(it => it.Category)
                 .Include(i => i.Item)
@@ -43,14 +67,24 @@ public class InventoryService : IInventoryService
                     CurrentStock = i.CurrentStock,
                     MinStockLevel = i.Item != null ? i.Item.MinStockLevel : 0
                 })
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
-            return ApiResponse<IEnumerable<InventoryResponse>>.SuccessResponse(inventories, "Inventories retrieved successfully");
+            var pagedData = new PagedData<InventoryResponse>
+            {
+                Items = inventories,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            };
+
+            return ApiResponse<PagedData<InventoryResponse>>.SuccessResponse(pagedData, "Inventories retrieved successfully");
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error occurred while fetching inventories.");
-            return ApiResponse<IEnumerable<InventoryResponse>>.FailureResponse("An error occurred while retrieving inventory data.");
+            return ApiResponse<PagedData<InventoryResponse>>.FailureResponse("An error occurred while retrieving inventory data.");
         }
     }
 }

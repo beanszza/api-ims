@@ -17,9 +17,9 @@ public class SuppliersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<IEnumerable<SupplierResponse>>>> GetAllSuppliers([FromQuery] string? supplierName = null, [FromQuery] bool? isActive = null)
+    public async Task<ActionResult<ApiResponse<PagedData<SupplierResponse>>>> GetAllSuppliers([FromQuery] string? supplierName = null, [FromQuery] bool? isActive = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var result = await _supplierService.GetAllSuppliersAsync(supplierName, isActive);
+        var result = await _supplierService.GetAllSuppliersAsync(supplierName, isActive, page, pageSize);
         return result.Success ? Ok(result) : StatusCode(500, result);
     }
 

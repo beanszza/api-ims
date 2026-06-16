@@ -6,5 +6,5 @@ namespace Applications.Interfaces;
 
 public interface IInventoryService
 {
-    Task<ApiResponse<IEnumerable<InventoryResponse>>> GetAllInventoriesAsync();
+    Task<ApiResponse<PagedData<InventoryResponse>>> GetAllInventoriesAsync(string? categoryName = null, int page = 1, int pageSize = 10);
 }

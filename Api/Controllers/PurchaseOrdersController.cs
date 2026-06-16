@@ -29,9 +29,9 @@ public class PurchaseOrdersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<IEnumerable<PurchaseOrderResponse>>>> GetPurchaseOrders([FromQuery] string? status = null)
+    public async Task<ActionResult<ApiResponse<PagedData<PurchaseOrderResponse>>>> GetPurchaseOrders([FromQuery] string? status = null, [FromQuery] string? search = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var result = await _purchaseOrderService.GetPurchaseOrdersAsync(status);
+        var result = await _purchaseOrderService.GetPurchaseOrdersAsync(status, search, page, pageSize);
         return result.Success ? Ok(result) : StatusCode(500, result);
     }
 
@@ -57,11 +57,13 @@ public class PurchaseOrdersController : ControllerBase
     }
 
     [HttpGet("transactions")]
-    public async Task<ActionResult<ApiResponse<IEnumerable<TransactionHistoryResponse>>>> GetTransactionHistory(
+    public async Task<ActionResult<ApiResponse<PagedData<TransactionHistoryResponse>>>> GetTransactionHistory(
         [FromQuery] string? filterType = null,
-        [FromQuery] DateTime? specificDate = null)
+        [FromQuery] DateTime? specificDate = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
     {
-        var result = await _purchaseOrderService.GetTransactionHistoryAsync(filterType, specificDate);
+        var result = await _purchaseOrderService.GetTransactionHistoryAsync(filterType, specificDate, page, pageSize);
         return result.Success ? Ok(result) : StatusCode(500, result);
     }
 

@@ -18,9 +18,9 @@ public class InventoriesController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<IEnumerable<InventoryResponse>>>> GetAllInventories()
+    public async Task<ActionResult<ApiResponse<PagedData<InventoryResponse>>>> GetAllInventories([FromQuery] string? categoryName = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
-        var result = await _inventoryService.GetAllInventoriesAsync();
+        var result = await _inventoryService.GetAllInventoriesAsync(categoryName, page, pageSize);
         if (result.Success)
         {
             return Ok(result);
