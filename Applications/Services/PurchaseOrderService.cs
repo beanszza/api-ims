@@ -240,6 +240,72 @@ public class PurchaseOrderService : IPurchaseOrderService
         }
     }
 
+    public async Task<ApiResponse<PurchaseOrderResponse>> UpdatePurchaseOrderAsync(int id, CreatePurchaseOrderRequest request)
+    {
+        try
+        {
+            _logger.LogInformation("Updating purchase order ID {PoId}", id);
+
+            var order = await _context.PurchaseOrders
+                .Include(o => o.PurchaseOrderItems)
+                .FirstOrDefaultAsync(o => o.PoId == id);
+
+            if (order == null)
+            {
+                return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Purchase order with ID {id} not found.");
+            }
+
+            // Validate Supplier existence
+            var supplier = await _context.Suppliers.FindAsync(request.SupplierId);
+            if (supplier == null)
+            {
+                return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Supplier with ID {request.SupplierId} not found.");
+            }
+
+            order.SupplierId = request.SupplierId;
+            order.ExpectedArrivalDate = request.ExpectedArrivalDate;
+            order.PaymentType = request.PaymentType;
+
+            // Update items
+            if (request.Items != null && request.Items.Any())
+            {
+                _context.PurchaseOrderItems.RemoveRange(order.PurchaseOrderItems);
+                
+                var poItems = new List<PurchaseOrderItem>();
+                foreach (var itemReq in request.Items)
+                {
+                    poItems.Add(new PurchaseOrderItem
+                    {
+                        ItemId = itemReq.ItemId,
+                        SupplierId = request.SupplierId,
+                        PoItemQuantity = itemReq.PoItemQuantity,
+                        ReceivedQuantity = 0
+                    });
+                }
+                order.PurchaseOrderItems = poItems;
+            }
+
+            _context.PurchaseOrders.Update(order);
+            await _context.SaveChangesAsync();
+
+            // Reload details
+            var reloadedOrder = await _context.PurchaseOrders
+                .Include(o => o.Supplier)
+                .Include(o => o.PurchaseOrderItems)
+                .ThenInclude(poi => poi.Item)
+                .FirstOrDefaultAsync(o => o.PoId == order.PoId);
+
+            var response = MapToResponse(reloadedOrder!);
+            _logger.LogInformation("Purchase order ID {PoId} updated successfully", id);
+            return ApiResponse<PurchaseOrderResponse>.SuccessResponse(response, "Purchase order updated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Error updating purchase order: {Message}", ex.Message);
+            return ApiResponse<PurchaseOrderResponse>.FailureResponse($"An error occurred: {ex.Message}");
+        }
+    }
+
     public async Task<ApiResponse<PurchaseOrderResponse>> UploadReceiptAsync(int id, IFormFile file)
     {
         try

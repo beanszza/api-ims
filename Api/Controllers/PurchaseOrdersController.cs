@@ -42,6 +42,13 @@ public class PurchaseOrdersController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    [HttpPut("{id}")]
+    public async Task<ActionResult<ApiResponse<PurchaseOrderResponse>>> UpdatePurchaseOrder([FromRoute] int id, [FromBody] CreatePurchaseOrderRequest request)
+    {
+        var result = await _purchaseOrderService.UpdatePurchaseOrderAsync(id, request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     [HttpPost("{id}/upload-receipt")]
     public async Task<ActionResult<ApiResponse<PurchaseOrderResponse>>> UploadReceipt([FromRoute] int id, [FromForm] IFormFile file)
     {
