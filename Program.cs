@@ -137,6 +137,7 @@ builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
 builder.Services.AddScoped<IStockTransferService, StockTransferService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IFinishedProductService, FinishedProductService>();
+builder.Services.AddScoped<ILocationService, LocationService>();
 
 builder.Services.AddCors(options =>
 {
@@ -251,13 +252,15 @@ if (app.Environment.IsDevelopment())
                 Console.WriteLine("✓ Unit of Measures seeded.");
             }
 
-            if (!db.Locations.Any())
+            if (!db.Locations.Any(l => l.LocationName == "Branch 1 - Quezon City"))
             {
-                Console.WriteLine("→ Seeding Locations...");
-                db.Locations.Add(new Domains.Entities.Location { LocationName = "Main Warehouse", LocationType = "Storage" });
+                Console.WriteLine("→ Seeding Testing Locations...");
+                db.Locations.Add(new Domains.Entities.Location { LocationName = "Branch 1 - Quezon City", LocationType = "Branch", Status = "Active" });
+                db.Locations.Add(new Domains.Entities.Location { LocationName = "Branch 2 - Makati", LocationType = "Branch", Status = "Active" });
+                db.Locations.Add(new Domains.Entities.Location { LocationName = "Bazaar Booth - SM North", LocationType = "Bazaar", Status = "Active" });
                 db.SaveChanges();
-                migrateLogger.LogInformation("✓ Locations seeded successfully.");
-                Console.WriteLine("✓ Locations seeded.");
+                migrateLogger.LogInformation("✓ Testing Locations seeded successfully.");
+                Console.WriteLine("✓ Testing Locations seeded.");
             }
 
             if (!db.Drivers.Any())
@@ -288,12 +291,28 @@ if (app.Environment.IsDevelopment())
                 db.FinishedProducts.Add(new Domains.Entities.FinishedProduct
                 {
                     ItemId = testItem.ItemId,
-                    SellingPrice = 19.99m,
-                    Sku = "TEST-SKU-001"
+                    SellingPrice = 15.50m,
+                    Sku = "SKU-TEST-01"
                 });
                 db.SaveChanges();
+
+                // Seed some inventory at Commissary Kitchen (Location 1) for testing
+                db.Inventories.Add(new Domains.Entities.Inventory { ItemId = testItem.ItemId, LocationId = 1, CurrentStock = 1000 });
+                if (db.Items.Any(i => i.ItemId == 9)) db.Inventories.Add(new Domains.Entities.Inventory { ItemId = 9, LocationId = 1, CurrentStock = 1000 }); // Ube Halaya
+                if (db.Items.Any(i => i.ItemId == 10)) db.Inventories.Add(new Domains.Entities.Inventory { ItemId = 10, LocationId = 1, CurrentStock = 1000 }); // Ube Jam
+                db.SaveChanges();
+
                 migrateLogger.LogInformation("✓ Test Finished Product seeded successfully.");
                 Console.WriteLine("✓ Test Finished Product seeded.");
+            }
+
+            // Unconditionally seed inventory for testing Stock Transfers
+            if (!db.Inventories.Any(i => i.LocationId == 1 && i.ItemId == 9))
+            {
+                db.Inventories.Add(new Domains.Entities.Inventory { ItemId = 9, LocationId = 1, DriverId = 1, CurrentStock = 5000 }); // Ube Halaya
+                db.Inventories.Add(new Domains.Entities.Inventory { ItemId = 10, LocationId = 1, DriverId = 1, CurrentStock = 5000 }); // Ube Jam
+                db.Inventories.Add(new Domains.Entities.Inventory { ItemId = 2, LocationId = 1, DriverId = 1, CurrentStock = 5000 }); // Test Product
+                db.SaveChanges();
             }
 
             if (!db.FinishedProducts.Any(fp => fp.Item != null && fp.Item.ItemName == "Ube Halaya"))

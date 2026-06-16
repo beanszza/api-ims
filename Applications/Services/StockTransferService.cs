@@ -102,6 +102,17 @@ public class StockTransferService : IStockTransferService
             _context.StockTransfers.Add(transfer);
             await _context.SaveChangesAsync();
 
+            var auditLog = new AuditLog
+            {
+                EntityName = "StockTransfer",
+                EntityId = transfer.TransferId.ToString(),
+                Action = "Created",
+                Timestamp = DateTime.UtcNow,
+                UserId = userId
+            };
+            _context.AuditLogs.Add(auditLog);
+            await _context.SaveChangesAsync();
+
             return ApiResponse<StockTransferResponse>.SuccessResponse(new StockTransferResponse
             {
                 TransferId = transfer.TransferId,
@@ -234,6 +245,19 @@ public class StockTransferService : IStockTransferService
                  _context.InventoryMovementLogs.Add(log);
             }
 
+            var auditLog = new AuditLog
+            {
+                EntityName = "StockTransfer",
+                EntityId = transfer.TransferId.ToString(),
+                FieldName = "Status",
+                OldValue = transfer.Status,
+                NewValue = newStatus,
+                Action = "StatusUpdated",
+                Timestamp = DateTime.UtcNow,
+                UserId = userId
+            };
+            _context.AuditLogs.Add(auditLog);
+
             transfer.Status = newStatus;
             _context.StockTransfers.Update(transfer);
             await _context.SaveChangesAsync();
@@ -258,6 +282,65 @@ public class StockTransferService : IStockTransferService
         {
             _logger.LogError(ex, "Error updating stock transfer status.");
             return ApiResponse<StockTransferResponse>.FailureResponse("An error occurred while updating the transfer.");
+        }
+    }
+
+    public async Task<ApiResponse<TransferDashboardResponse>> GetTransferDashboardSummaryAsync()
+    {
+        try
+        {
+            var pendingCount = await _context.StockTransfers.CountAsync(st => st.Status == "Pending");
+            var inTransitCount = await _context.StockTransfers.CountAsync(st => st.Status == "In Transit");
+            var completedCount = await _context.StockTransfers.CountAsync(st => st.Status == "Completed");
+
+            var response = new TransferDashboardResponse
+            {
+                PendingCount = pendingCount,
+                InTransitCount = inTransitCount,
+                CompletedCount = completedCount
+            };
+
+            return ApiResponse<TransferDashboardResponse>.SuccessResponse(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching transfer dashboard summary.");
+            return ApiResponse<TransferDashboardResponse>.FailureResponse("An error occurred while fetching the dashboard summary.");
+        }
+    }
+
+    public async Task<ApiResponse<IEnumerable<TransferHistoryResponse>>> GetTransferHistoryAsync(string? status = null, DateTime? fromDate = null, DateTime? toDate = null)
+    {
+        try
+        {
+            var query = _context.AuditLogs.Where(a => a.EntityName == "StockTransfer").AsQueryable();
+
+            if (fromDate.HasValue)
+                query = query.Where(a => a.Timestamp >= fromDate.Value);
+
+            if (toDate.HasValue)
+                query = query.Where(a => a.Timestamp <= toDate.Value);
+
+            var logs = await query.OrderByDescending(a => a.Timestamp).ToListAsync();
+
+            var result = logs.Select(l => new TransferHistoryResponse
+            {
+                LogId = l.LogId,
+                TransferId = l.EntityId,
+                Action = l.Action,
+                FieldName = l.FieldName,
+                OldValue = l.OldValue,
+                NewValue = l.NewValue,
+                Timestamp = l.Timestamp,
+                UserId = l.UserId
+            });
+
+            return ApiResponse<IEnumerable<TransferHistoryResponse>>.SuccessResponse(result);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error fetching transfer history.");
+            return ApiResponse<IEnumerable<TransferHistoryResponse>>.FailureResponse("An error occurred while fetching transfer history.");
         }
     }
 }

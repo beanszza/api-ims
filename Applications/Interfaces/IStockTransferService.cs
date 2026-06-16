@@ -11,4 +11,6 @@ public interface IStockTransferService
     Task<ApiResponse<IEnumerable<StockTransferResponse>>> GetAllTransfersAsync();
     Task<ApiResponse<StockTransferResponse>> CreateTransferAsync(CreateStockTransferRequest request, int userId);
     Task<ApiResponse<StockTransferResponse>> UpdateTransferStatusAsync(int transferId, UpdateStockTransferStatusRequest request, int userId);
+    Task<ApiResponse<TransferDashboardResponse>> GetTransferDashboardSummaryAsync();
+    Task<ApiResponse<IEnumerable<TransferHistoryResponse>>> GetTransferHistoryAsync(string? status = null, DateTime? fromDate = null, DateTime? toDate = null);
 }

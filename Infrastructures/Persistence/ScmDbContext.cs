@@ -34,7 +34,7 @@ public class ScmDbContext : DbContext
     public DbSet<InventoryMovementLog> InventoryMovementLogs { get; set; }
 
     // --- LOGS & OTHERS ---
-    // AuditLog: add DbSet + migration when the scm_db table is introduced (see Domains.Entities.AuditLog).
+    public DbSet<AuditLog> AuditLogs { get; set; }
 
 
     // --- CONFIGURATION ---
@@ -43,6 +43,7 @@ public class ScmDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         // Primary keys do not match the default "{EntityName}Id" convention for these types.
+        modelBuilder.Entity<AuditLog>().HasKey(e => e.LogId);
         modelBuilder.Entity<FinishedProduct>().HasKey(e => e.ProductId);
         modelBuilder.Entity<UnitOfMeasure>().HasKey(e => e.UomId);
         modelBuilder.Entity<ProductionBatch>().HasKey(e => e.BatchId);
