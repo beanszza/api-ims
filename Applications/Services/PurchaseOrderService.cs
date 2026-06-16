@@ -136,6 +136,7 @@ public class PurchaseOrderService : IPurchaseOrderService
 
             var totalCount = await query.CountAsync();
             var orders = await query
+                .OrderByDescending(o => o.PoId)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
@@ -164,12 +165,12 @@ public class PurchaseOrderService : IPurchaseOrderService
         {
             _logger.LogInformation("Updating purchase order ID {PoId} status to {Status}", id, status);
 
-            var allowedStatuses = new[] { "Pending", "Arrived", "Completed", "Cancelled" };
+            var allowedStatuses = new[] { "Pending", "Arrived", "Completed", "Cancelled", "Rejected" };
             var matchedStatus = allowedStatuses.FirstOrDefault(s => s.Equals(status, StringComparison.OrdinalIgnoreCase));
 
             if (matchedStatus == null)
             {
-                return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Invalid status: {status}. Allowed statuses are: Pending, Arrived, Completed, Cancelled.");
+                return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Invalid status: {status}. Allowed statuses are: Pending, Arrived, Completed, Cancelled, Rejected.");
             }
 
             var order = await _context.PurchaseOrders
@@ -530,6 +531,38 @@ public class PurchaseOrderService : IPurchaseOrderService
             UserId = log.UserId,
             Timestamp = log.Timestamp
         };
+    }
+
+    public async Task<ApiResponse<PurchaseOrderResponse>> DeleteReceiptAsync(int id)
+    {
+        try
+        {
+            _logger.LogInformation("Deleting receipt for purchase order ID {PoId}", id);
+
+            var order = await _context.PurchaseOrders
+                .Include(o => o.Supplier)
+                .Include(o => o.PurchaseOrderItems)
+                .ThenInclude(poi => poi.Item)
+                .FirstOrDefaultAsync(o => o.PoId == id);
+
+            if (order == null)
+            {
+                return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Purchase order with ID {id} not found.");
+            }
+
+            order.ProofImageUrl = string.Empty;
+            _context.PurchaseOrders.Update(order);
+            await _context.SaveChangesAsync();
+
+            var response = MapToResponse(order);
+            _logger.LogInformation("Receipt deleted successfully for purchase order ID {PoId}", id);
+            return ApiResponse<PurchaseOrderResponse>.SuccessResponse(response, "Receipt attachment deleted successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Error deleting receipt: {Message}", ex.Message);
+            return ApiResponse<PurchaseOrderResponse>.FailureResponse($"An error occurred: {ex.Message}");
+        }
     }
 
     private static string EscapeCsv(string field)

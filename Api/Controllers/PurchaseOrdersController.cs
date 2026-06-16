@@ -56,6 +56,13 @@ public class PurchaseOrdersController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    [HttpDelete("{id}/receipt")]
+    public async Task<ActionResult<ApiResponse<PurchaseOrderResponse>>> DeleteReceipt([FromRoute] int id)
+    {
+        var result = await _purchaseOrderService.DeleteReceiptAsync(id);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     [HttpGet("transactions")]
     public async Task<ActionResult<ApiResponse<PagedData<TransactionHistoryResponse>>>> GetTransactionHistory(
         [FromQuery] string? filterType = null,

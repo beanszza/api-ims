@@ -14,6 +14,7 @@ public interface IPurchaseOrderService
     Task<ApiResponse<PurchaseOrderResponse>> UpdateOrderStatusAsync(int id, string status);
     Task<ApiResponse<PurchaseOrderResponse>> UpdatePurchaseOrderAsync(int id, CreatePurchaseOrderRequest request);
     Task<ApiResponse<PurchaseOrderResponse>> UploadReceiptAsync(int id, IFormFile file);
+    Task<ApiResponse<PurchaseOrderResponse>> DeleteReceiptAsync(int id);
     Task<ApiResponse<PagedData<TransactionHistoryResponse>>> GetTransactionHistoryAsync(string? filterType = null, DateTime? specificDate = null, int page = 1, int pageSize = 10);
     Task<string> ExportTransactionHistoryCsvAsync(string? filterType = null, DateTime? specificDate = null);
 }
