@@ -62,7 +62,7 @@ namespace api_scm.Migrations
 
                     b.HasKey("LogId");
 
-                    b.ToTable("AuditLogs");
+                    b.ToTable("AuditLogs", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.BatchConsumption", b =>
@@ -93,7 +93,7 @@ namespace api_scm.Migrations
 
                     b.HasIndex("SourceSupplierId");
 
-                    b.ToTable("BatchConsumptions");
+                    b.ToTable("BatchConsumptions", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.Category", b =>
@@ -114,7 +114,7 @@ namespace api_scm.Migrations
 
                     b.HasKey("CategoryId");
 
-                    b.ToTable("Categories");
+                    b.ToTable("Categories", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.Driver", b =>
@@ -135,7 +135,7 @@ namespace api_scm.Migrations
 
                     b.HasKey("DriverId");
 
-                    b.ToTable("Drivers");
+                    b.ToTable("Drivers", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.FinishedProduct", b =>
@@ -160,7 +160,7 @@ namespace api_scm.Migrations
 
                     b.HasIndex("ItemId");
 
-                    b.ToTable("FinishedProducts");
+                    b.ToTable("FinishedProducts", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.Inventory", b =>
@@ -191,7 +191,7 @@ namespace api_scm.Migrations
 
                     b.HasIndex("LocationId");
 
-                    b.ToTable("Inventories");
+                    b.ToTable("Inventories", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.InventoryMovementLog", b =>
@@ -231,7 +231,7 @@ namespace api_scm.Migrations
 
                     b.HasIndex("LocationId");
 
-                    b.ToTable("InventoryMovementLogs");
+                    b.ToTable("InventoryMovementLogs", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.Item", b =>
@@ -267,7 +267,7 @@ namespace api_scm.Migrations
 
                     b.HasIndex("UomId");
 
-                    b.ToTable("Items");
+                    b.ToTable("Items", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.Location", b =>
@@ -292,7 +292,7 @@ namespace api_scm.Migrations
 
                     b.HasKey("LocationId");
 
-                    b.ToTable("Locations");
+                    b.ToTable("Locations", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.ProductionBatch", b =>
@@ -347,7 +347,7 @@ namespace api_scm.Migrations
 
                     b.HasIndex("RecipeId");
 
-                    b.ToTable("ProductionBatches");
+                    b.ToTable("ProductionBatches", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.PurchaseOrder", b =>
@@ -386,7 +386,7 @@ namespace api_scm.Migrations
 
                     b.HasIndex("SupplierId");
 
-                    b.ToTable("PurchaseOrders");
+                    b.ToTable("PurchaseOrders", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.PurchaseOrderItem", b =>
@@ -423,7 +423,7 @@ namespace api_scm.Migrations
 
                     b.HasIndex("SupplierId");
 
-                    b.ToTable("PurchaseOrderItems");
+                    b.ToTable("PurchaseOrderItems", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.Recipe", b =>
@@ -451,7 +451,7 @@ namespace api_scm.Migrations
 
                     b.HasIndex("ProductId");
 
-                    b.ToTable("Recipes");
+                    b.ToTable("Recipes", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.RecipeIngredient", b =>
@@ -482,7 +482,7 @@ namespace api_scm.Migrations
 
                     b.HasIndex("UomId");
 
-                    b.ToTable("RecipeIngredients");
+                    b.ToTable("RecipeIngredients", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.StockTransfer", b =>
@@ -520,7 +520,7 @@ namespace api_scm.Migrations
 
                     b.HasIndex("SourceLocationId");
 
-                    b.ToTable("StockTransfers");
+                    b.ToTable("StockTransfers", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.Supplier", b =>
@@ -552,7 +552,7 @@ namespace api_scm.Migrations
 
                     b.HasKey("SupplierId");
 
-                    b.ToTable("Suppliers");
+                    b.ToTable("Suppliers", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.UnitOfMeasure", b =>
@@ -573,7 +573,7 @@ namespace api_scm.Migrations
 
                     b.HasKey("UomId");
 
-                    b.ToTable("UnitOfMeasures");
+                    b.ToTable("UnitOfMeasures", (string)null);
                 });
 
             modelBuilder.Entity("Domains.Entities.BatchConsumption", b =>

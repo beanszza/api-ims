@@ -159,18 +159,18 @@ public class PurchaseOrderService : IPurchaseOrderService
         }
     }
 
-    public async Task<ApiResponse<PurchaseOrderResponse>> UpdateOrderStatusAsync(int id, string status)
+    public async Task<ApiResponse<PurchaseOrderResponse>> UpdateOrderStatusAsync(int id, UpdatePurchaseOrderQaRequest request)
     {
         try
         {
-            _logger.LogInformation("Updating purchase order ID {PoId} status to {Status}", id, status);
+            _logger.LogInformation("Updating purchase order ID {PoId} status to {Status}", id, request.Status);
 
             var allowedStatuses = new[] { "Pending", "Arrived", "Completed", "Cancelled", "Rejected" };
-            var matchedStatus = allowedStatuses.FirstOrDefault(s => s.Equals(status, StringComparison.OrdinalIgnoreCase));
+            var matchedStatus = allowedStatuses.FirstOrDefault(s => s.Equals(request.Status, StringComparison.OrdinalIgnoreCase));
 
             if (matchedStatus == null)
             {
-                return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Invalid status: {status}. Allowed statuses are: Pending, Arrived, Completed, Cancelled, Rejected.");
+                return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Invalid status: {request.Status}. Allowed statuses are: Pending, Arrived, Completed, Cancelled, Rejected.");
             }
 
             var order = await _context.PurchaseOrders
@@ -186,6 +186,18 @@ public class PurchaseOrderService : IPurchaseOrderService
 
             var oldStatus = order.Status;
             order.Status = matchedStatus;
+
+            // Handle QA specific fields if it's a QA transition
+            if (matchedStatus == "Completed" || matchedStatus == "Rejected")
+            {
+                if (!string.IsNullOrEmpty(request.QaNotes) || !string.IsNullOrEmpty(request.QaStatus))
+                {
+                    order.QaNotes = request.QaNotes;
+                    order.QaStatus = request.QaStatus;
+                    order.QaInspectedDate = DateTime.UtcNow;
+                    order.InspectedBy = request.InspectedBy ?? "Admin"; // Fallback to Admin if not provided
+                }
+            }
 
             // Trigger stock additions & transaction logging on "Arrived" or "Completed"
             var isArrivingTransition = (matchedStatus == "Arrived" || matchedStatus == "Completed") && oldStatus != "Arrived" && oldStatus != "Completed";
@@ -506,6 +518,10 @@ public class PurchaseOrderService : IPurchaseOrderService
             PaymentType = order.PaymentType,
             ProofImageUrl = order.ProofImageUrl,
             TotalAmount = order.TotalAmount,
+            QaNotes = order.QaNotes,
+            QaInspectedDate = order.QaInspectedDate,
+            QaStatus = order.QaStatus,
+            InspectedBy = order.InspectedBy,
             Items = order.PurchaseOrderItems.Select(poi => new PurchaseOrderItemResponse
             {
                 PoItemId = poi.PoItemId,

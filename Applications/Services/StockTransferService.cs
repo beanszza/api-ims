@@ -51,7 +51,7 @@ public class StockTransferService : IStockTransferService
                     .ThenInclude(p => p.Item)
                 .Include(st => st.SourceLocation)
                 .Include(st => st.DestLocation)
-                .OrderByDescending(st => st.TransferDate)
+                .OrderByDescending(st => st.TransferId)
                 .Select(st => new StockTransferResponse
                 {
                     TransferId = st.TransferId,
@@ -125,7 +125,7 @@ public class StockTransferService : IStockTransferService
                 DestLocationId = request.DestLocationId,
                 TransferQuantity = request.TransferQuantity,
                 Status = "Pending",
-                TransferDate = DateTime.UtcNow
+                TransferDate = request.TransferDate.HasValue ? DateTime.SpecifyKind(request.TransferDate.Value, DateTimeKind.Utc) : DateTime.UtcNow
             };
 
             _context.StockTransfers.Add(transfer);
@@ -158,6 +158,82 @@ public class StockTransferService : IStockTransferService
         {
             _logger.LogError(ex, "Error creating stock transfer.");
             return ApiResponse<StockTransferResponse>.FailureResponse("An error occurred while creating the transfer.");
+        }
+    }
+
+    public async Task<ApiResponse<StockTransferResponse>> UpdateTransferAsync(int transferId, UpdateStockTransferRequest request, int userId)
+    {
+        try
+        {
+            var transfer = await _context.StockTransfers
+                .Include(st => st.Product)
+                .ThenInclude(p => p.Item)
+                .Include(st => st.SourceLocation)
+                .Include(st => st.DestLocation)
+                .FirstOrDefaultAsync(st => st.TransferId == transferId);
+
+            if (transfer == null)
+            {
+                return ApiResponse<StockTransferResponse>.FailureResponse("Transfer not found.");
+            }
+
+            if (transfer.Status != "Pending")
+            {
+                return ApiResponse<StockTransferResponse>.FailureResponse("Only Pending transfers can be edited.");
+            }
+
+            var product = await _context.FinishedProducts.Include(f => f.Item).FirstOrDefaultAsync(f => f.ProductId == request.ProductId);
+            if (product == null)
+            {
+                return ApiResponse<StockTransferResponse>.FailureResponse("Invalid product selected.");
+            }
+
+            var destLocation = await _context.Locations.FindAsync(request.DestLocationId);
+            if (destLocation == null)
+            {
+                return ApiResponse<StockTransferResponse>.FailureResponse("Invalid destination location selected.");
+            }
+
+            transfer.ProductId = request.ProductId;
+            transfer.SourceLocationId = request.SourceLocationId;
+            transfer.DestLocationId = request.DestLocationId;
+            transfer.TransferQuantity = request.TransferQuantity;
+            if (request.TransferDate.HasValue)
+            {
+                transfer.TransferDate = DateTime.SpecifyKind(request.TransferDate.Value, DateTimeKind.Utc);
+            }
+
+            await _context.SaveChangesAsync();
+
+            var auditLog = new AuditLog
+            {
+                EntityName = "StockTransfer",
+                EntityId = transfer.TransferId.ToString(),
+                Action = "Updated",
+                Timestamp = DateTime.UtcNow,
+                UserId = userId
+            };
+            _context.AuditLogs.Add(auditLog);
+            await _context.SaveChangesAsync();
+
+            return ApiResponse<StockTransferResponse>.SuccessResponse(new StockTransferResponse
+            {
+                TransferId = transfer.TransferId,
+                ProductId = transfer.ProductId,
+                ProductName = product.Item.ItemName,
+                SourceLocationId = transfer.SourceLocationId,
+                SourceLocationName = transfer.SourceLocation?.LocationName,
+                DestLocationId = transfer.DestLocationId,
+                DestLocationName = destLocation.LocationName,
+                TransferQuantity = transfer.TransferQuantity,
+                Status = transfer.Status,
+                TransferDate = transfer.TransferDate
+            }, "Stock transfer updated successfully.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating stock transfer.");
+            return ApiResponse<StockTransferResponse>.FailureResponse("An error occurred while updating the transfer.");
         }
     }
 

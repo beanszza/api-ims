@@ -22,6 +22,13 @@ namespace api_scm.Contracts.Requests
     {
         public string Status { get; set; } = string.Empty;
     }
+
+    public class UpdatePurchaseOrderQaRequest : UpdateOrderStatusRequest
+    {
+        public string? QaNotes { get; set; }
+        public string? QaStatus { get; set; }
+        public string? InspectedBy { get; set; }
+    }
 }
 
 namespace api_scm.Contracts.Responses
@@ -37,6 +44,12 @@ namespace api_scm.Contracts.Responses
         public string PaymentType { get; set; } = string.Empty;
         public string ProofImageUrl { get; set; } = string.Empty;
         public decimal TotalAmount { get; set; }
+        
+        public string? QaNotes { get; set; }
+        public DateTime? QaInspectedDate { get; set; }
+        public string? QaStatus { get; set; }
+        public string? InspectedBy { get; set; }
+
         public List<PurchaseOrderItemResponse> Items { get; set; } = new();
     }
 

@@ -36,9 +36,9 @@ public class PurchaseOrdersController : ControllerBase
     }
 
     [HttpPut("{id}/status")]
-    public async Task<ActionResult<ApiResponse<PurchaseOrderResponse>>> UpdateOrderStatus([FromRoute] int id, [FromBody] UpdateOrderStatusRequest request)
+    public async Task<ActionResult<ApiResponse<PurchaseOrderResponse>>> UpdateOrderStatus([FromRoute] int id, [FromBody] UpdatePurchaseOrderQaRequest request)
     {
-        var result = await _purchaseOrderService.UpdateOrderStatusAsync(id, request.Status);
+        var result = await _purchaseOrderService.UpdateOrderStatusAsync(id, request);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
