@@ -199,10 +199,10 @@ public class PurchaseOrderService : IPurchaseOrderService
                 }
             }
 
-            // Trigger stock additions & transaction logging on "Arrived" or "Completed"
-            var isArrivingTransition = (matchedStatus == "Arrived" || matchedStatus == "Completed") && oldStatus != "Arrived" && oldStatus != "Completed";
+            // Trigger stock additions & transaction logging ONLY on "Completed" (passed QA)
+            var isCompletedTransition = (matchedStatus == "Completed") && oldStatus != "Completed";
 
-            if (isArrivingTransition)
+            if (isCompletedTransition)
             {
                 // Retrieve default Location and Driver as fallback
                 var location = await _context.Locations.FirstOrDefaultAsync();
