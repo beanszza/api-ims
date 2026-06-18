@@ -3,6 +3,7 @@ namespace api_scm.Contracts.Requests;
 public class CreateRecipeRequest
 {
     public int ProductId { get; set; }
+    public string RecipeName { get; set; } = string.Empty;
     public int OutputQuantity { get; set; }
     public string Notes { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;

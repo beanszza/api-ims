@@ -51,6 +51,8 @@ public class SupplierService : ISupplierService
                     ContactPerson = s.ContactPerson,
                     Email = s.Email,
                     Phone = s.Phone,
+                    Address = s.Address,
+                    Website = s.Website,
                     IsActive = s.IsActive
                 })
                 .Skip((page - 1) * pageSize)
@@ -143,6 +145,8 @@ public class SupplierService : ISupplierService
                 ContactPerson = request.ContactPerson,
                 Email = request.Email,
                 Phone = request.Phone,
+                Address = request.Address,
+                Website = request.Website,
                 IsActive = request.IsActive
             };
 
@@ -156,6 +160,8 @@ public class SupplierService : ISupplierService
                 ContactPerson = supplier.ContactPerson,
                 Email = supplier.Email,
                 Phone = supplier.Phone,
+                Address = supplier.Address,
+                Website = supplier.Website,
                 IsActive = supplier.IsActive
             };
 
@@ -205,6 +211,11 @@ public class SupplierService : ISupplierService
                 supplier.Phone = request.Phone;
             }
 
+            if (request.Address != null)
+                supplier.Address = request.Address;
+            if (request.Website != null)
+                supplier.Website = request.Website;
+
             if (request.IsActive.HasValue)
                 supplier.IsActive = request.IsActive.Value;
 
@@ -218,6 +229,8 @@ public class SupplierService : ISupplierService
                 ContactPerson = supplier.ContactPerson,
                 Email = supplier.Email,
                 Phone = supplier.Phone,
+                Address = supplier.Address,
+                Website = supplier.Website,
                 IsActive = supplier.IsActive
             };
 

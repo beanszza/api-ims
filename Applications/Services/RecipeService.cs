@@ -35,6 +35,7 @@ public class RecipeService : IRecipeService
                 .Select(r => new RecipeResponse
                 {
                     RecipeId = r.RecipeId,
+                    RecipeName = r.RecipeName,
                     ProductId = r.ProductId,
                     OutputQuantity = r.OutputQuantity,
                     Notes = r.Notes,
@@ -87,6 +88,7 @@ public class RecipeService : IRecipeService
 
             var recipe = new Recipe
             {
+                RecipeName = request.RecipeName,
                 ProductId = request.ProductId,
                 OutputQuantity = request.OutputQuantity,
                 Notes = request.Notes,
@@ -105,6 +107,7 @@ public class RecipeService : IRecipeService
             var response = new RecipeResponse
             {
                 RecipeId = recipe.RecipeId,
+                RecipeName = recipe.RecipeName,
                 ProductId = recipe.ProductId,
                 OutputQuantity = recipe.OutputQuantity,
                 Notes = recipe.Notes,
@@ -141,6 +144,11 @@ public class RecipeService : IRecipeService
             if (recipe == null)
             {
                 return ApiResponse<RecipeResponse>.FailureResponse($"Recipe with ID {id} not found.");
+            }
+
+            if (request.RecipeName != null)
+            {
+                recipe.RecipeName = request.RecipeName;
             }
 
             if (request.OutputQuantity.HasValue)
@@ -219,6 +227,7 @@ public class RecipeService : IRecipeService
             var response = new RecipeResponse
             {
                 RecipeId = recipe.RecipeId,
+                RecipeName = recipe.RecipeName,
                 ProductId = recipe.ProductId,
                 OutputQuantity = recipe.OutputQuantity,
                 Notes = recipe.Notes,

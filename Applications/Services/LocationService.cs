@@ -34,6 +34,8 @@ public class LocationService : ILocationService
                     LocationId = l.LocationId,
                     LocationName = l.LocationName,
                     LocationType = l.LocationType,
+                    Address = l.Address,
+                    IsActive = l.IsActive,
                     Status = l.Status
                 })
                 .Skip((page - 1) * pageSize)
@@ -122,6 +124,8 @@ public class LocationService : ILocationService
 
             location.LocationName = request.LocationName;
             location.LocationType = request.LocationType;
+            location.Address = request.Address;
+            location.IsActive = request.IsActive;
             location.Status = newStatus;
 
             _context.Locations.Update(location);
@@ -132,6 +136,8 @@ public class LocationService : ILocationService
                 LocationId = location.LocationId,
                 LocationName = location.LocationName,
                 LocationType = location.LocationType,
+                Address = location.Address,
+                IsActive = location.IsActive,
                 Status = location.Status
             };
 
@@ -141,6 +147,60 @@ public class LocationService : ILocationService
         {
             _logger.LogError(ex, "Error updating location.");
             return ApiResponse<LocationResponse>.FailureResponse("An error occurred while updating the location.");
+        }
+    }
+
+    public async Task<ApiResponse<LocationResponse>> CreateLocationAsync(CreateLocationRequest request, int userId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(request.LocationName))
+                return ApiResponse<LocationResponse>.FailureResponse("LocationName is required.");
+            if (string.IsNullOrWhiteSpace(request.LocationType))
+                return ApiResponse<LocationResponse>.FailureResponse("LocationType is required.");
+
+            var location = new Location
+            {
+                LocationName = request.LocationName,
+                LocationType = request.LocationType,
+                Address = request.Address,
+                IsActive = request.IsActive,
+                Status = string.IsNullOrWhiteSpace(request.Status) ? "Active" : request.Status
+            };
+
+            _context.Locations.Add(location);
+            await _context.SaveChangesAsync();
+
+            var timestamp = DateTime.UtcNow;
+            _context.AuditLogs.Add(new AuditLog
+            {
+                EntityName = "Location",
+                EntityId = location.LocationId.ToString(),
+                FieldName = "LocationId",
+                OldValue = "null",
+                NewValue = location.LocationId.ToString(),
+                Action = "Created",
+                Timestamp = timestamp,
+                UserId = userId
+            });
+            await _context.SaveChangesAsync();
+
+            var response = new LocationResponse
+            {
+                LocationId = location.LocationId,
+                LocationName = location.LocationName,
+                LocationType = location.LocationType,
+                Address = location.Address,
+                IsActive = location.IsActive,
+                Status = location.Status
+            };
+
+            return ApiResponse<LocationResponse>.SuccessResponse(response, "Location created successfully.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error creating location.");
+            return ApiResponse<LocationResponse>.FailureResponse("An error occurred while creating the location.");
         }
     }
 }

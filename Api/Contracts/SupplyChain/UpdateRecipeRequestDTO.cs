@@ -4,6 +4,7 @@ namespace api_scm.Contracts.Requests;
 
 public class UpdateRecipeRequest
 {
+    public string? RecipeName { get; set; }
     public int? OutputQuantity { get; set; }
     public string? Notes { get; set; }
     public bool? IsActive { get; set; }
