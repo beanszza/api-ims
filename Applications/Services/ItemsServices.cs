@@ -23,6 +23,24 @@ public class ItemService : IItemService
         _logger = logger;
     }
 
+    private async Task LogActionAsync(string action, string itemName)
+    {
+        var phTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila");
+        var phTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, phTimeZone);
+
+        var log = new AuditLog
+        {
+            EntityName = "supply",
+            EntityId = itemName,
+            Action = action,
+            Timestamp = phTime,
+            UserId = 1,
+            FieldName = "scmsuser"
+        };
+        _context.AuditLogs.Add(log);
+        await _context.SaveChangesAsync();
+    }
+
     public async Task<ApiResponse<PagedData<ItemResponse>>> GetAllItemsAsync(string? search = null, string? category = null, bool? isActive = null, string? sort = "asc", int page = 1, int pageSize = 10)
     {
         try
@@ -219,6 +237,8 @@ public class ItemService : IItemService
                 CurrentStock = currentStock
             };
 
+            await LogActionAsync("Added New Supply", item.ItemName);
+
             _logger.LogInformation($"Item created successfully with ID: {item.ItemId}");
             return ApiResponse<ItemResponse>.SuccessResponse(response, "Item created successfully");
         }
@@ -309,6 +329,8 @@ public class ItemService : IItemService
                 CurrentStock = currentStock
             };
 
+            await LogActionAsync(request.IsActive.HasValue && !request.IsActive.Value ? "Deactivated Supply" : "Updated Supply", item.ItemName);
+
             _logger.LogInformation($"Item with ID {id} updated successfully");
             return ApiResponse<ItemResponse>.SuccessResponse(response, "Item updated successfully");
         }
@@ -334,6 +356,8 @@ public class ItemService : IItemService
 
             _context.Items.Remove(item);
             await _context.SaveChangesAsync();
+
+            await LogActionAsync("Deleted Supply", item.ItemName);
 
             _logger.LogInformation($"Item with ID {id} deleted successfully");
             return ApiResponse<EmptyPayload>.SuccessResponse(new EmptyPayload(), "Item deleted successfully");
