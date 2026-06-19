@@ -291,34 +291,14 @@ public class StockTransferService : IStockTransferService
             }
             else if (newStatus == "Completed" && transfer.Status == "In Transit")
             {
-                // Add to destination inventory
-                var destInventory = await _context.Inventories
-                    .FirstOrDefaultAsync(i => i.LocationId == transfer.DestLocationId && i.ItemId == transfer.Product.ItemId);
-
-                if (destInventory == null)
-                {
-                    destInventory = new Inventory
-                    {
-                        LocationId = transfer.DestLocationId,
-                        ItemId = transfer.Product.ItemId,
-                        CurrentStock = transfer.TransferQuantity,
-                        DriverId = 1 // Default/Placeholder if required, or update Inventory entity
-                    };
-                    _context.Inventories.Add(destInventory);
-                }
-                else
-                {
-                    destInventory.CurrentStock += transfer.TransferQuantity;
-                    _context.Inventories.Update(destInventory);
-                }
-
-                // Log addition
+                // The user explicitly requested that completed deliveries DO NOT add to the destination inventory.
+                // They only want it to be a straight deduction from the Commissary.
                 var log = new InventoryMovementLog
                 {
                     ItemId = transfer.Product.ItemId,
                     LocationId = transfer.DestLocationId,
-                    ChangeQuantity = transfer.TransferQuantity,
-                    ActionType = "Transfer In",
+                    ChangeQuantity = 0,
+                    ActionType = "Transfer Completed (No Addition)",
                     ReferenceId = transfer.TransferId.ToString(),
                     UserId = userId,
                     Timestamp = DateTime.UtcNow

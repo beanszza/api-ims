@@ -1,5 +1,4 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
+using api_scm.Contracts.Requests;
 using api_scm.Contracts.Responses;
 
 namespace Applications.Interfaces;
@@ -7,4 +6,6 @@ namespace Applications.Interfaces;
 public interface IFinishedProductService
 {
     Task<ApiResponse<IEnumerable<FinishedProductResponse>>> GetAllFinishedProductsAsync();
+    Task<ApiResponse<FinishedProductResponse>> CreateFinishedProductAsync(CreateFinishedProductRequest request);
+    Task<ApiResponse<FinishedProductResponse>> UpdateFinishedProductAsync(int id, UpdateFinishedProductRequest request);
 }

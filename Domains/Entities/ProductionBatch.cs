@@ -10,6 +10,8 @@ public class ProductionBatch
     public int ActualQuantity { get; set; }
     public DateTime ProductionDate { get; set; }
     public string Stage { get; set; } = string.Empty;
+    public string Status { get; set; } = "Scheduled";
+    public string AssignedCook { get; set; } = string.Empty;
     public string QualityStatus { get; set; } = string.Empty;
     public string RejectionReason { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;

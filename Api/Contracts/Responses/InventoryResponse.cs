@@ -11,5 +11,6 @@ public class InventoryResponse
     public string LocationName { get; set; } = string.Empty;
     public int CurrentStock { get; set; }
     public int MinStockLevel { get; set; }
+    public int MaxStockLevel { get; set; }
     public bool IsLowStock => CurrentStock <= MinStockLevel;
 }

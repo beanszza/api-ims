@@ -23,4 +23,18 @@ public class FinishedProductsController : ControllerBase
         var result = await _finishedProductService.GetAllFinishedProductsAsync();
         return result.Success ? Ok(result) : StatusCode(500, result);
     }
+
+    [HttpPost]
+    public async Task<ActionResult<ApiResponse<FinishedProductResponse>>> CreateFinishedProduct([FromBody] api_scm.Contracts.Requests.CreateFinishedProductRequest request)
+    {
+        var result = await _finishedProductService.CreateFinishedProductAsync(request);
+        return result.Success ? Ok(result) : StatusCode(500, result);
+    }
+
+    [HttpPut("{id}")]
+    public async Task<ActionResult<ApiResponse<FinishedProductResponse>>> UpdateFinishedProduct(int id, [FromBody] api_scm.Contracts.Requests.UpdateFinishedProductRequest request)
+    {
+        var result = await _finishedProductService.UpdateFinishedProductAsync(id, request);
+        return result.Success ? Ok(result) : StatusCode(500, result);
+    }
 }

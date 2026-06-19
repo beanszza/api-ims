@@ -138,6 +138,8 @@ builder.Services.AddScoped<IStockTransferService, StockTransferService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IFinishedProductService, FinishedProductService>();
 builder.Services.AddScoped<ILocationService, LocationService>();
+builder.Services.AddScoped<IProductionService, ProductionService>();
+builder.Services.AddHostedService<ImageCleanupService>();
 
 builder.Services.AddCors(options =>
 {
@@ -207,6 +209,20 @@ if (app.Environment.IsDevelopment())
     {
         try
         {
+            db.Database.ExecuteSqlRaw(@"
+                ALTER TABLE ""PurchaseOrders"" ADD COLUMN IF NOT EXISTS ""InspectedBy"" text;
+                ALTER TABLE ""PurchaseOrders"" ADD COLUMN IF NOT EXISTS ""QaInspectedDate"" timestamp with time zone;
+                ALTER TABLE ""PurchaseOrders"" ADD COLUMN IF NOT EXISTS ""QaNotes"" text;
+                ALTER TABLE ""PurchaseOrders"" ADD COLUMN IF NOT EXISTS ""QaStatus"" text;
+            ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Could not alter PurchaseOrders table: {ex.Message}");
+        }
+
+        try
+        {
             // Seed Master Data if empty
             if (!db.Categories.Any())
             {
@@ -272,100 +288,52 @@ if (app.Environment.IsDevelopment())
                 Console.WriteLine("✓ Drivers seeded.");
             }
 
-            // Seed a test Item and FinishedProduct so you can test Recipes
-            if (!db.FinishedProducts.Any())
+            // Quick fix for existing Finished Products
+            var finishedGoodCategory = db.Categories.FirstOrDefault(c => c.CategoryName.ToLower().Contains("finished good"));
+            if (finishedGoodCategory == null)
             {
-                Console.WriteLine("→ Seeding Test Finished Product...");
-                var testItem = new Domains.Entities.Item
-                {
-                    ItemName = "Test Final Product",
-                    UomId = 2, // pcs
-                    CategoryId = 1, // Raw Materials (or Finished Goods if you had it)
-                    MinStockLevel = 0,
-                    MaxStockLevel = 100,
-                    IsActive = true
-                };
-                db.Items.Add(testItem);
-                db.SaveChanges(); // get ItemId
-
-                db.FinishedProducts.Add(new Domains.Entities.FinishedProduct
-                {
-                    ItemId = testItem.ItemId,
-                    SellingPrice = 15.50m,
-                    Sku = "SKU-TEST-01"
-                });
+                finishedGoodCategory = new Domains.Entities.Category { CategoryName = "Finished Good", Description = "Finished Goods" };
+                db.Categories.Add(finishedGoodCategory);
                 db.SaveChanges();
-
-                // Seed some inventory at Commissary Kitchen (Location 1) for testing
-                db.Inventories.Add(new Domains.Entities.Inventory { ItemId = testItem.ItemId, LocationId = 1, CurrentStock = 1000 });
-                if (db.Items.Any(i => i.ItemId == 9)) db.Inventories.Add(new Domains.Entities.Inventory { ItemId = 9, LocationId = 1, CurrentStock = 1000 }); // Ube Halaya
-                if (db.Items.Any(i => i.ItemId == 10)) db.Inventories.Add(new Domains.Entities.Inventory { ItemId = 10, LocationId = 1, CurrentStock = 1000 }); // Ube Jam
-                db.SaveChanges();
-
-                migrateLogger.LogInformation("✓ Test Finished Product seeded successfully.");
-                Console.WriteLine("✓ Test Finished Product seeded.");
             }
-
-            // Unconditionally seed inventory for testing Stock Transfers
-            if (!db.Inventories.Any(i => i.LocationId == 1 && i.ItemId == 9))
+            var finishedProductsItems = db.FinishedProducts.Include(fp => fp.Item).ToList();
+            foreach (var fp in finishedProductsItems)
             {
-                db.Inventories.Add(new Domains.Entities.Inventory { ItemId = 9, LocationId = 1, DriverId = 1, CurrentStock = 5000 }); // Ube Halaya
-                db.Inventories.Add(new Domains.Entities.Inventory { ItemId = 10, LocationId = 1, DriverId = 1, CurrentStock = 5000 }); // Ube Jam
-                db.Inventories.Add(new Domains.Entities.Inventory { ItemId = 2, LocationId = 1, DriverId = 1, CurrentStock = 5000 }); // Test Product
+                if (fp.Item != null && fp.Item.CategoryId != finishedGoodCategory.CategoryId)
+                {
+                    fp.Item.CategoryId = finishedGoodCategory.CategoryId;
+                }
+            }
+            db.SaveChanges();
+            
+            // Quick fix: Remove any inventory from non-Commissary locations (Branches)
+            var branchInventories = db.Inventories
+                .Include(i => i.Location)
+                .Where(i => i.Location != null && !i.Location.LocationName.ToLower().Contains("commissary"))
+                .ToList();
+            if (branchInventories.Any())
+            {
+                db.Inventories.RemoveRange(branchInventories);
                 db.SaveChanges();
             }
 
-            if (!db.FinishedProducts.Any(fp => fp.Item != null && fp.Item.ItemName == "Ube Halaya"))
+            // Quick fix to merge duplicate inventories in Commissary
+            var duplicates = db.Inventories
+                .GroupBy(i => new { i.ItemId, i.LocationId })
+                .Where(g => g.Count() > 1)
+                .ToList();
+
+            foreach (var group in duplicates)
             {
-                Console.WriteLine("→ Seeding Ube Halaya Finished Product...");
-                var ubeHalayaItem = new Domains.Entities.Item
+                var keep = group.First();
+                var toRemove = group.Skip(1).ToList();
+                foreach (var dup in toRemove)
                 {
-                    ItemName = "Ube Halaya",
-                    UomId = 2, // pcs
-                    CategoryId = 1,
-                    MinStockLevel = 0,
-                    MaxStockLevel = 100,
-                    IsActive = true
-                };
-                db.Items.Add(ubeHalayaItem);
-                db.SaveChanges();
-
-                db.FinishedProducts.Add(new Domains.Entities.FinishedProduct
-                {
-                    ItemId = ubeHalayaItem.ItemId,
-                    SellingPrice = 150.00m,
-                    Sku = "UBE-HALAYA-001"
-                });
-                db.SaveChanges();
-                migrateLogger.LogInformation("✓ Ube Halaya Finished Product seeded successfully.");
-                Console.WriteLine("✓ Ube Halaya Finished Product seeded.");
+                    keep.CurrentStock += dup.CurrentStock;
+                    db.Inventories.Remove(dup);
+                }
             }
-
-            if (!db.FinishedProducts.Any(fp => fp.Item != null && fp.Item.ItemName == "Ube Jam"))
-            {
-                Console.WriteLine("→ Seeding Ube Jam Finished Product...");
-                var ubeJamItem = new Domains.Entities.Item
-                {
-                    ItemName = "Ube Jam",
-                    UomId = 2, // pcs
-                    CategoryId = 1,
-                    MinStockLevel = 0,
-                    MaxStockLevel = 100,
-                    IsActive = true
-                };
-                db.Items.Add(ubeJamItem);
-                db.SaveChanges();
-
-                db.FinishedProducts.Add(new Domains.Entities.FinishedProduct
-                {
-                    ItemId = ubeJamItem.ItemId,
-                    SellingPrice = 120.00m,
-                    Sku = "UBE-JAM-001"
-                });
-                db.SaveChanges();
-                migrateLogger.LogInformation("✓ Ube Jam Finished Product seeded successfully.");
-                Console.WriteLine("✓ Ube Jam Finished Product seeded.");
-            }
+            db.SaveChanges();
             
             Console.WriteLine("✓ All database initialization completed successfully!");
         }

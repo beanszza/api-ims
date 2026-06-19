@@ -32,7 +32,7 @@ public class InventoryService : IInventoryService
                 // To support 'Raw Materials', 'Tools', 'Finished Goods' matching:
                 if (categoryName.ToLower().Contains("raw material"))
                 {
-                    query = query.Where(i => i.Item != null && i.Item.Category != null && i.Item.Category.CategoryName.ToLower().Contains("raw material"));
+                    query = query.Where(i => i.Item != null && i.Item.Category != null && i.Item.Category.CategoryName.ToLower().Contains("raw material") && (i.Location == null || i.Location.LocationName != "Finished Goods"));
                 }
                 else if (categoryName.ToLower().Contains("tool"))
                 {
@@ -40,7 +40,7 @@ public class InventoryService : IInventoryService
                 }
                 else if (categoryName.ToLower().Contains("finished good"))
                 {
-                    query = query.Where(i => i.Item != null && i.Item.Category != null && (i.Item.Category.CategoryName.ToLower().Contains("finished good") || i.Item.Category.CategoryName.ToLower().Contains("product")));
+                    query = query.Where(i => (i.Item != null && i.Item.Category != null && (i.Item.Category.CategoryName.ToLower().Contains("finished good") || i.Item.Category.CategoryName.ToLower().Contains("product"))) || (i.Location != null && i.Location.LocationName == "Finished Goods"));
                 }
                 else
                 {
@@ -65,8 +65,10 @@ public class InventoryService : IInventoryService
                     LocationId = i.LocationId,
                     LocationName = i.Location != null ? i.Location.LocationName : "Unknown Location",
                     CurrentStock = i.CurrentStock,
-                    MinStockLevel = i.Item != null ? i.Item.MinStockLevel : 0
+                    MinStockLevel = i.Item != null ? i.Item.MinStockLevel : 0,
+                    MaxStockLevel = i.Item != null ? i.Item.MaxStockLevel : 0
                 })
+                .OrderBy(i => i.InventoryId)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();

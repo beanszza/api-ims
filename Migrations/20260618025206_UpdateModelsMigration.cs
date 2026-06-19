@@ -11,9 +11,29 @@ namespace api_scm.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // The database already has these columns because EnsureCreated() ran successfully 
-            // before this migration was generated. We leave this empty so EF Core marks the 
-            // migration as applied without trying to add the existing columns again.
+            migrationBuilder.AddColumn<string>(
+                name: "InspectedBy",
+                table: "PurchaseOrders",
+                type: "text",
+                nullable: true);
+
+            migrationBuilder.AddColumn<DateTime>(
+                name: "QaInspectedDate",
+                table: "PurchaseOrders",
+                type: "timestamp with time zone",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "QaNotes",
+                table: "PurchaseOrders",
+                type: "text",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "QaStatus",
+                table: "PurchaseOrders",
+                type: "text",
+                nullable: true);
         }
 
         /// <inheritdoc />

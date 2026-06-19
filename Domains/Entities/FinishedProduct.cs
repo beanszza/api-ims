@@ -6,6 +6,7 @@ public class FinishedProduct
     public int ItemId { get; set; }
     public decimal SellingPrice { get; set; }
     public string Sku { get; set; } = string.Empty;
+    public string Variant { get; set; } = string.Empty;
 
     // Navigation Properties
     public Item? Item { get; set; }
