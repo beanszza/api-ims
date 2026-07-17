@@ -9,22 +9,20 @@ class FixDb
         using var conn = new NpgsqlConnection(connStr);
         conn.Open();
 
-        string[] queries = {
-            "ALTER TABLE \"PurchaseOrders\" ADD COLUMN IF NOT EXISTS \"InspectedBy\" text;",
-            "ALTER TABLE \"PurchaseOrders\" ADD COLUMN IF NOT EXISTS \"QaInspectedDate\" timestamp with time zone;",
-            "ALTER TABLE \"PurchaseOrders\" ADD COLUMN IF NOT EXISTS \"QaNotes\" text;",
-            "ALTER TABLE \"PurchaseOrders\" ADD COLUMN IF NOT EXISTS \"QaStatus\" text;"
-        };
+        string query = @"
+            DELETE FROM ""RecipeIngredients"" ri
+            USING ""Recipes"" r, ""FinishedProducts"" fp
+            WHERE ri.""RecipeId"" = r.""RecipeId""
+              AND r.""ProductId"" = fp.""ProductId""
+              AND ri.""ItemId"" = fp.""ItemId"";
+        ";
 
-        foreach (var q in queries)
-        {
-            try {
-                using var cmd = new NpgsqlCommand(q, conn);
-                cmd.ExecuteNonQuery();
-                Console.WriteLine("Executed: " + q);
-            } catch (Exception ex) {
-                Console.WriteLine("Error on " + q + ": " + ex.Message);
-            }
+        try {
+            using var cmd = new NpgsqlCommand(query, conn);
+            int rowsAffected = cmd.ExecuteNonQuery();
+            Console.WriteLine($"Executed cleanup. Rows deleted: {rowsAffected}");
+        } catch (Exception ex) {
+            Console.WriteLine("Error on cleanup: " + ex.Message);
         }
         Console.WriteLine("Done!");
     }

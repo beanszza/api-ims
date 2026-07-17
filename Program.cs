@@ -1,8 +1,11 @@
 using Applications.Interfaces;
 using Applications.Services;
 using Infrastructures.Persistence;
+using Infrastructures.MachineLearning;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.ML;
 using Microsoft.OpenApi;
+using MongoDB.Driver;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -130,6 +133,30 @@ builder.Services.AddDbContext<ScmDbContext>(options =>
     }
 });
 
+// Configure MongoDB
+builder.Services.Configure<MongoDbSettings>(
+    builder.Configuration.GetSection("MongoDbSettings"));
+
+builder.Services.AddSingleton<IMongoClient>(sp =>
+{
+    var settings = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MongoDbSettings>>().Value;
+    return new MongoClient(settings.ConnectionString);
+});
+
+// Configure ML.NET
+builder.Services.Configure<MLSettings>(
+    builder.Configuration.GetSection("MLSettings"));
+
+var mlModelPath = builder.Configuration.GetSection("MLSettings:ModelPath").Value;
+if (!string.IsNullOrEmpty(mlModelPath) && File.Exists(mlModelPath))
+{
+    builder.Services.AddPredictionEnginePool<ModelInput, ModelOutput>()
+        .FromFile(modelName: "RecommendationModel", filePath: mlModelPath, watchForChanges: true);
+}
+
+builder.Services.AddScoped<ModelBuilder>();
+builder.Services.AddScoped<PredictionService>();
+
 builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddScoped<IRecipeService, RecipeService>();
@@ -139,6 +166,7 @@ builder.Services.AddScoped<IInventoryService, InventoryService>();
 builder.Services.AddScoped<IFinishedProductService, FinishedProductService>();
 builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddScoped<IProductionService, ProductionService>();
+builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddHostedService<ImageCleanupService>();
 
 builder.Services.AddCors(options =>

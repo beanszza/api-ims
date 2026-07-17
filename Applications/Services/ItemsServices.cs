@@ -25,15 +25,12 @@ public class ItemService : IItemService
 
     private async Task LogActionAsync(string action, string itemName)
     {
-        var phTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Manila");
-        var phTime = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, phTimeZone);
-
         var log = new AuditLog
         {
             EntityName = "supply",
             EntityId = itemName,
             Action = action,
-            Timestamp = phTime,
+            Timestamp = DateTime.UtcNow,
             UserId = 1,
             FieldName = "scmsuser"
         };
@@ -245,7 +242,7 @@ public class ItemService : IItemService
         catch (Exception ex)
         {
             _logger.LogError($"Error creating item: {ex.Message}");
-            return ApiResponse<ItemResponse>.FailureResponse($"An error occurred: {ex.Message}");
+            return ApiResponse<ItemResponse>.FailureResponse($"An error occurred: {ex.InnerException?.Message ?? ex.Message}");
         }
     }
 

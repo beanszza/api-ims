@@ -66,8 +66,8 @@ public class RecipeService : IRecipeService
             _logger.LogInformation("Creating new recipe for product ID {ProductId}", request.ProductId);
 
             // Validate Product
-            var productExists = await _context.FinishedProducts.AnyAsync(p => p.ProductId == request.ProductId);
-            if (!productExists)
+            var product = await _context.FinishedProducts.FirstOrDefaultAsync(p => p.ProductId == request.ProductId);
+            if (product == null)
             {
                 return ApiResponse<RecipeResponse>.FailureResponse($"Product with ID {request.ProductId} not found.");
             }
@@ -80,6 +80,10 @@ public class RecipeService : IRecipeService
 
             foreach (var ing in request.Ingredients)
             {
+                if (ing.ItemId == product.ItemId)
+                {
+                    return ApiResponse<RecipeResponse>.FailureResponse("A finished product cannot be an ingredient of its own recipe.");
+                }
                 if (ing.StandardQuantity <= 0)
                 {
                     return ApiResponse<RecipeResponse>.FailureResponse("Ingredient quantities must be greater than zero.");
@@ -172,9 +176,13 @@ public class RecipeService : IRecipeService
 
             if (request.Ingredients != null)
             {
-                // Validate ingredient existences and quantities
+                // Validate ingredient existences, quantities, and self-reference
                 foreach (var ing in request.Ingredients)
                 {
+                    if (ing.ItemId == recipe.Product?.ItemId)
+                    {
+                        return ApiResponse<RecipeResponse>.FailureResponse("A finished product cannot be an ingredient of its own recipe.");
+                    }
                     if (ing.StandardQuantity <= 0)
                     {
                         return ApiResponse<RecipeResponse>.FailureResponse("Ingredient quantities must be greater than zero.");
