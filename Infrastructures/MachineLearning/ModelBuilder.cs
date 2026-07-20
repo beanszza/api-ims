@@ -1,7 +1,7 @@
 using Microsoft.ML;
 using Microsoft.ML.Data;
 
-namespace api_scm.Infrastructures.MachineLearning;
+namespace Infrastructures.MachineLearning;
 
 // Generic input model for recommendations/predictions
 public class ModelInput

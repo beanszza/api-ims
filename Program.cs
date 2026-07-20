@@ -152,10 +152,10 @@ if (!string.IsNullOrEmpty(mlModelPath) && File.Exists(mlModelPath))
 {
     builder.Services.AddPredictionEnginePool<ModelInput, ModelOutput>()
         .FromFile(modelName: "RecommendationModel", filePath: mlModelPath, watchForChanges: true);
+    builder.Services.AddScoped<PredictionService>();
 }
 
-builder.Services.AddScoped<ModelBuilder>();
-builder.Services.AddScoped<PredictionService>();
+builder.Services.AddScoped<Infrastructures.MachineLearning.ModelBuilder>();
 
 builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
@@ -347,6 +347,7 @@ if (app.Environment.IsDevelopment())
 
             // Quick fix to merge duplicate inventories in Commissary
             var duplicates = db.Inventories
+                .AsEnumerable()
                 .GroupBy(i => new { i.ItemId, i.LocationId })
                 .Where(g => g.Count() > 1)
                 .ToList();

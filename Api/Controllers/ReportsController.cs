@@ -20,7 +20,7 @@ public class ReportsController : ControllerBase
     }
 
     [HttpGet("inventory")]
-    public async Task<ActionResult<ApiResponse<IEnumerable<InventoryReportDto>>>> GetInventoryReport([FromQuery] ReportFilterDto filter)
+    public async Task<ActionResult<ApiResponse<InventoryReportResponseDto>>> GetInventoryReport([FromQuery] ReportFilterDto filter)
     {
         var result = await _reportService.GetInventoryReportAsync(filter);
         if (result.Success)
@@ -31,7 +31,7 @@ public class ReportsController : ControllerBase
     }
 
     [HttpGet("procurement")]
-    public async Task<ActionResult<ApiResponse<IEnumerable<ProcurementReportDto>>>> GetProcurementReport([FromQuery] ReportFilterDto filter)
+    public async Task<ActionResult<ApiResponse<ProcurementReportResponseDto>>> GetProcurementReport([FromQuery] ReportFilterDto filter)
     {
         var result = await _reportService.GetProcurementReportAsync(filter);
         if (result.Success)
@@ -42,7 +42,7 @@ public class ReportsController : ControllerBase
     }
 
     [HttpGet("production")]
-    public async Task<ActionResult<ApiResponse<IEnumerable<ProductionQualityReportDto>>>> GetProductionReport([FromQuery] ReportFilterDto filter)
+    public async Task<ActionResult<ApiResponse<ProductionQualityReportResponseDto>>> GetProductionReport([FromQuery] ReportFilterDto filter)
     {
         var result = await _reportService.GetProductionReportAsync(filter);
         if (result.Success)
@@ -53,7 +53,7 @@ public class ReportsController : ControllerBase
     }
 
     [HttpGet("supplier")]
-    public async Task<ActionResult<ApiResponse<IEnumerable<SupplierPerformanceReportDto>>>> GetSupplierReport([FromQuery] ReportFilterDto filter)
+    public async Task<ActionResult<ApiResponse<SupplierPerformanceReportResponseDto>>> GetSupplierReport([FromQuery] ReportFilterDto filter)
     {
         var result = await _reportService.GetSupplierReportAsync(filter);
         if (result.Success)
@@ -64,7 +64,7 @@ public class ReportsController : ControllerBase
     }
 
     [HttpGet("distribution")]
-    public async Task<ActionResult<ApiResponse<IEnumerable<DistributionReportDto>>>> GetDistributionReport([FromQuery] ReportFilterDto filter)
+    public async Task<ActionResult<ApiResponse<DistributionReportResponseDto>>> GetDistributionReport([FromQuery] ReportFilterDto filter)
     {
         var result = await _reportService.GetDistributionReportAsync(filter);
         if (result.Success)

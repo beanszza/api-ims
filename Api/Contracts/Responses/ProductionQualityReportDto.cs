@@ -1,12 +1,19 @@
+using System.Collections.Generic;
+
 namespace api_scm.Api.Contracts.Responses;
 
-public class ProductionQualityReportDto
+public class ProductionQualityReportResponseDto
 {
-    public int BatchId { get; set; }
+    public IEnumerable<KitchenYieldEfficiencyDto> YieldEfficiency { get; set; } = new List<KitchenYieldEfficiencyDto>();
+}
+
+public class KitchenYieldEfficiencyDto
+{
     public string RecipeName { get; set; } = string.Empty;
-    public double YieldSuccessRate { get; set; }
-    public double IngredientWaste { get; set; }
-    public int TotalRejectedQuantity { get; set; }
+    public string TotalBatchesCooked { get; set; } = string.Empty;
+    public string TotalOutputQty { get; set; } = string.Empty;
+    public string YieldSuccessRate { get; set; } = string.Empty;
+    public string TotalRejectedQty { get; set; } = string.Empty;
+    public string IngredientWasteQty { get; set; } = string.Empty;
     public string CommonFailureReason { get; set; } = string.Empty;
-    public System.DateTime ProductionDate { get; set; }
 }

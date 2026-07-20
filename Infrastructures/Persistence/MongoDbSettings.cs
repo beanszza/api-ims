@@ -1,4 +1,4 @@
-namespace api_scm.Infrastructures.Persistence;
+namespace Infrastructures.Persistence;
 
 public class MongoDbSettings
 {

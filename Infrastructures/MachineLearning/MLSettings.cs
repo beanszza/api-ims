@@ -1,4 +1,4 @@
-namespace api_scm.Infrastructures.MachineLearning;
+namespace Infrastructures.MachineLearning;
 
 public class MLSettings
 {

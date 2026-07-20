@@ -1,6 +1,6 @@
 using Microsoft.Extensions.ML;
 
-namespace api_scm.Infrastructures.MachineLearning;
+namespace Infrastructures.MachineLearning;
 
 public class PredictionService
 {

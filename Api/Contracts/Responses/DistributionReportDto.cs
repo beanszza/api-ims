@@ -1,12 +1,20 @@
+using System.Collections.Generic;
+
 namespace api_scm.Api.Contracts.Responses;
 
-public class DistributionReportDto
+public class DistributionReportResponseDto
 {
-    public int TransferId { get; set; }
+    public IEnumerable<LogisticsTransferVelocityDto> LogisticsVelocity { get; set; } = new List<LogisticsTransferVelocityDto>();
+}
+
+public class LogisticsTransferVelocityDto
+{
+    public string TransferId { get; set; } = string.Empty;
     public string SourceLocation { get; set; } = string.Empty;
-    public string DestLocation { get; set; } = string.Empty;
-    public string DriverName { get; set; } = string.Empty;
-    public double TransitDurationHours { get; set; }
-    public string Status { get; set; } = string.Empty;
-    public System.DateTime TransferDate { get; set; }
+    public string DestinationBranch { get; set; } = string.Empty;
+    public string DispatchDate { get; set; } = string.Empty;
+    public string ReceiveDate { get; set; } = string.Empty;
+    public string TransitDuration { get; set; } = string.Empty;
+    public string AssignedDriver { get; set; } = string.Empty;
+    public string TransferStatus { get; set; } = string.Empty;
 }

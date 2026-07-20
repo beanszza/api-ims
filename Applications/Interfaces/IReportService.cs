@@ -8,9 +8,9 @@ namespace Applications.Interfaces;
 
 public interface IReportService
 {
-    Task<ApiResponse<IEnumerable<InventoryReportDto>>> GetInventoryReportAsync(ReportFilterDto filter);
-    Task<ApiResponse<IEnumerable<ProcurementReportDto>>> GetProcurementReportAsync(ReportFilterDto filter);
-    Task<ApiResponse<IEnumerable<ProductionQualityReportDto>>> GetProductionReportAsync(ReportFilterDto filter);
-    Task<ApiResponse<IEnumerable<SupplierPerformanceReportDto>>> GetSupplierReportAsync(ReportFilterDto filter);
-    Task<ApiResponse<IEnumerable<DistributionReportDto>>> GetDistributionReportAsync(ReportFilterDto filter);
+    Task<ApiResponse<InventoryReportResponseDto>> GetInventoryReportAsync(ReportFilterDto filter);
+    Task<ApiResponse<ProcurementReportResponseDto>> GetProcurementReportAsync(ReportFilterDto filter);
+    Task<ApiResponse<ProductionQualityReportResponseDto>> GetProductionReportAsync(ReportFilterDto filter);
+    Task<ApiResponse<SupplierPerformanceReportResponseDto>> GetSupplierReportAsync(ReportFilterDto filter);
+    Task<ApiResponse<DistributionReportResponseDto>> GetDistributionReportAsync(ReportFilterDto filter);
 }
