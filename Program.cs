@@ -1,7 +1,10 @@
 using Applications.Interfaces;
 using Applications.Services;
 using Infrastructures.Persistence;
-using Infrastructures.MachineLearning;
+using ms_analytics.Controllers;
+using ms_analytics.Infrastructure;
+using ms_analytics.Models;
+using ms_analytics.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.ML;
 using Microsoft.OpenApi;
@@ -140,8 +143,30 @@ builder.Services.Configure<MongoDbSettings>(
 builder.Services.AddSingleton<IMongoClient>(sp =>
 {
     var settings = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MongoDbSettings>>().Value;
-    return new MongoClient(settings.ConnectionString);
+    var mongoUrl = new MongoUrl(settings.ConnectionString ?? "mongodb://localhost:27017");
+    var clientSettings = MongoClientSettings.FromUrl(mongoUrl);
+    clientSettings.ServerSelectionTimeout = TimeSpan.FromSeconds(2);
+    clientSettings.ConnectTimeout = TimeSpan.FromSeconds(2);
+    return new MongoClient(clientSettings);
 });
+
+builder.Services.AddScoped<IMongoDatabase>(sp =>
+{
+    var client = sp.GetRequiredService<IMongoClient>();
+    var settings = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MongoDbSettings>>().Value;
+    return client.GetDatabase(settings.DatabaseName ?? "scms_analytics");
+});
+
+// Configure Redis (IDistributedCache)
+var redisConnectionString = builder.Configuration.GetSection("RedisSettings:ConnectionString").Value ?? "localhost:6379,abortConnect=false";
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = redisConnectionString + ",connectTimeout=1000,syncTimeout=1000";
+    options.InstanceName = "scms_";
+});
+
+builder.Services.AddScoped<RedisCacheService>();
+builder.Services.AddScoped<AnalyticsCompilerService>();
 
 // Configure ML.NET
 builder.Services.Configure<MLSettings>(
@@ -155,7 +180,7 @@ if (!string.IsNullOrEmpty(mlModelPath) && File.Exists(mlModelPath))
     builder.Services.AddScoped<PredictionService>();
 }
 
-builder.Services.AddScoped<Infrastructures.MachineLearning.ModelBuilder>();
+builder.Services.AddScoped<ms_analytics.Infrastructure.ModelBuilder>();
 
 builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
@@ -363,7 +388,71 @@ if (app.Environment.IsDevelopment())
                 }
             }
             db.SaveChanges();
-            
+
+            if (!db.AuditLogs.Any())
+            {
+                Console.WriteLine("→ Seeding PostgreSQL AuditLogs table...");
+                db.AuditLogs.AddRange(
+                    new Domains.Entities.AuditLog
+                    {
+                        EntityName = "Supply",
+                        EntityId = "Ube Yam 50kg",
+                        Action = "Initial Raw Material Stock Onboarded",
+                        FieldName = "Inventory Specialist",
+                        OldValue = "0",
+                        NewValue = "50",
+                        Timestamp = DateTime.UtcNow.AddHours(-18),
+                        UserId = 1
+                    },
+                    new Domains.Entities.AuditLog
+                    {
+                        EntityName = "Supply",
+                        EntityId = "White Sugar 100kg",
+                        Action = "Restock Purchase Received & Verified",
+                        FieldName = "Warehouse Admin",
+                        OldValue = "20",
+                        NewValue = "120",
+                        Timestamp = DateTime.UtcNow.AddHours(-6),
+                        UserId = 1
+                    },
+                    new Domains.Entities.AuditLog
+                    {
+                        EntityName = "Recipe",
+                        EntityId = "Ube Jam 500g Standard Batch",
+                        Action = "Production Recipe Version 1.0 Approved",
+                        FieldName = "Head Pastry Chef",
+                        OldValue = "Draft",
+                        NewValue = "Active",
+                        Timestamp = DateTime.UtcNow.AddDays(-1),
+                        UserId = 1
+                    },
+                    new Domains.Entities.AuditLog
+                    {
+                        EntityName = "Recipe",
+                        EntityId = "Pan de Sal 20pc Pack",
+                        Action = "Ingredient BOM Ratio Calibrated",
+                        FieldName = "Production Supervisor",
+                        OldValue = "1.8kg flour",
+                        NewValue = "2.0kg flour",
+                        Timestamp = DateTime.UtcNow.AddHours(-10),
+                        UserId = 1
+                    },
+                    new Domains.Entities.AuditLog
+                    {
+                        EntityName = "Supplier",
+                        EntityId = "Batangas Flour Corporation",
+                        Action = "Vendor Quality Verification Passed",
+                        FieldName = "Quality Lead",
+                        OldValue = "Pending Inspection",
+                        NewValue = "Grade A Approved",
+                        Timestamp = DateTime.UtcNow.AddDays(-2),
+                        UserId = 1
+                    }
+                );
+                db.SaveChanges();
+                Console.WriteLine("✓ PostgreSQL AuditLogs seeded.");
+            }
+
             Console.WriteLine("✓ All database initialization completed successfully!");
         }
         catch (Exception ex)

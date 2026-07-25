@@ -73,4 +73,26 @@ public class ReportsController : ControllerBase
         }
         return StatusCode(500, result);
     }
+
+    [HttpGet("supply-list")]
+    public async Task<ActionResult<ApiResponse<SupplyListReportResponseDto>>> GetSupplyListReport([FromQuery] ReportFilterDto filter)
+    {
+        var result = await _reportService.GetSupplyListReportAsync(filter);
+        if (result.Success)
+        {
+            return Ok(result);
+        }
+        return StatusCode(500, result);
+    }
+
+    [HttpGet("recipe")]
+    public async Task<ActionResult<ApiResponse<RecipeReportResponseDto>>> GetRecipeReport([FromQuery] ReportFilterDto filter)
+    {
+        var result = await _reportService.GetRecipeReportAsync(filter);
+        if (result.Success)
+        {
+            return Ok(result);
+        }
+        return StatusCode(500, result);
+    }
 }

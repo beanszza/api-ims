@@ -9,6 +9,7 @@ using Applications.Interfaces;
 using Infrastructures.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Domains.Entities;
 
 namespace Applications.Services;
 
@@ -34,78 +35,558 @@ public class ReportService : IReportService
 
     public async Task<ApiResponse<InventoryReportResponseDto>> GetInventoryReportAsync(ReportFilterDto filter)
     {
-        var response = new InventoryReportResponseDto
+        try
         {
-            HistoricalAudit = new List<HistoricalInventoryAuditDto>
+            var logsQuery = _context.InventoryMovementLogs
+                .AsNoTracking()
+                .Include(log => log.Item)
+                .AsQueryable();
+
+            if (filter != null)
             {
-                new HistoricalInventoryAuditDto { Period = "June 2026", TotalActiveItems = "48 Items", StartingStockQty = "1,450 kg", EndingStockQty = "1,120 kg", StockInQty = "800 kg", StockOutQty = "1,080 kg", WastageQty = "50 kg", InventoryVelocity = "83.7%" },
-                new HistoricalInventoryAuditDto { Period = "May 2026", TotalActiveItems = "46 Items", StartingStockQty = "1,320 kg", EndingStockQty = "1,450 kg", StockInQty = "950 kg", StockOutQty = "790 kg", WastageQty = "30 kg", InventoryVelocity = "72.4%" },
-                new HistoricalInventoryAuditDto { Period = "April 2026", TotalActiveItems = "45 Items", StartingStockQty = "1,100 kg", EndingStockQty = "1,320 kg", StockInQty = "1,100 kg", StockOutQty = "840 kg", WastageQty = "40 kg", InventoryVelocity = "75.1%" }
-            },
-            DemandForecast = new List<InventoryDemandForecastDto>
-            {
-                new InventoryDemandForecastDto { ItemName = "White Sugar", CurrentStock = "12 kg", AvgDailyUsage = "3.5 kg/day", DaysLeft = "3 Days", RunoutDate = "July 23, 2026", UrgencyBadge = "CRITICAL", RecommendedReorderQty = "88 kg" },
-                new InventoryDemandForecastDto { ItemName = "All-Purpose Flour", CurrentStock = "18 kg", AvgDailyUsage = "2.0 kg/day", DaysLeft = "9 Days", RunoutDate = "July 29, 2026", UrgencyBadge = "WARNING", RecommendedReorderQty = "82 kg" },
-                new InventoryDemandForecastDto { ItemName = "Butter", CurrentStock = "45 kg", AvgDailyUsage = "2.1 kg/day", DaysLeft = "21 Days", RunoutDate = "August 10, 2026", UrgencyBadge = "NORMAL", RecommendedReorderQty = "0 kg" }
+                if (filter.StartDate.HasValue)
+                    logsQuery = logsQuery.Where(log => log.Timestamp >= filter.StartDate.Value.ToUniversalTime());
+                if (filter.EndDate.HasValue)
+                    logsQuery = logsQuery.Where(log => log.Timestamp <= filter.EndDate.Value.ToUniversalTime());
+                if (filter.Month.HasValue)
+                    logsQuery = logsQuery.Where(log => log.Timestamp.Month == filter.Month.Value);
+                if (filter.Year.HasValue)
+                    logsQuery = logsQuery.Where(log => log.Timestamp.Year == filter.Year.Value);
             }
-        };
-        return ApiResponse<InventoryReportResponseDto>.SuccessResponse(response, "Inventory report generated successfully");
+
+            var logs = await logsQuery.ToListAsync();
+
+            var historicalAudit = logs
+                .GroupBy(log => new { log.Timestamp.Year, log.Timestamp.Month })
+                .OrderByDescending(g => g.Key.Year)
+                .ThenByDescending(g => g.Key.Month)
+                .Select(g => {
+                    var period = new DateTime(g.Key.Year, g.Key.Month, 1).ToString("MMMM yyyy");
+                    var itemsCount = g.Select(l => l.ItemId).Distinct().Count();
+                    
+                    var stockIn = g.Where(l => l.ActionType.Contains("Add", StringComparison.OrdinalIgnoreCase) || l.ActionType.Contains("Receive", StringComparison.OrdinalIgnoreCase) || (l.ChangeQuantity > 0 && !l.ActionType.Contains("Transfer", StringComparison.OrdinalIgnoreCase)))
+                                   .Sum(l => l.ChangeQuantity);
+                    var stockOut = g.Where(l => l.ActionType.Contains("Deduct", StringComparison.OrdinalIgnoreCase) || l.ActionType.Contains("Consume", StringComparison.OrdinalIgnoreCase) || (l.ActionType.Contains("Transfer", StringComparison.OrdinalIgnoreCase) && l.ChangeQuantity < 0))
+                                    .Sum(l => Math.Abs(l.ChangeQuantity));
+                    var wastage = g.Where(l => l.ActionType.Contains("Wastage", StringComparison.OrdinalIgnoreCase) || l.ActionType.Contains("Spoil", StringComparison.OrdinalIgnoreCase) || l.ActionType.Contains("Reject", StringComparison.OrdinalIgnoreCase))
+                                   .Sum(l => Math.Abs(l.ChangeQuantity));
+
+                    return new HistoricalInventoryAuditDto
+                    {
+                        Period = period,
+                        TotalActiveItems = $"{itemsCount} Items",
+                        StartingStockQty = "N/A", // Snapshots not currently stored
+                        EndingStockQty = "N/A",
+                        StockInQty = $"{stockIn} units",
+                        StockOutQty = $"{stockOut} units",
+                        WastageQty = $"{wastage} units",
+                        InventoryVelocity = stockIn > 0 ? $"{Math.Round((double)stockOut / stockIn * 100, 1)}%" : "0%"
+                    };
+                }).ToList();
+
+            var itemsQuery = await _context.Items
+                .AsNoTracking()
+                .Include(i => i.Uom)
+                .Include(i => i.Inventories)
+                .Where(i => i.IsActive)
+                .ToListAsync();
+
+            // For Demand Forecast, we need 30-day avg daily usage
+            var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
+            var recentOutLogs = await _context.InventoryMovementLogs
+                .AsNoTracking()
+                .Where(l => l.Timestamp >= thirtyDaysAgo && l.ChangeQuantity < 0 && !l.ActionType.Contains("Transfer"))
+                .ToListAsync();
+
+            var demandForecast = itemsQuery.Select(i => {
+                var currentStock = i.Inventories?.Sum(inv => inv.CurrentStock) ?? 0;
+                
+                var itemOutLogs = recentOutLogs.Where(l => l.ItemId == i.ItemId).ToList();
+                var thirtyDayUsage = itemOutLogs.Sum(l => Math.Abs(l.ChangeQuantity));
+                var avgDaily = Math.Round((double)thirtyDayUsage / 30, 1);
+
+                double daysLeftRaw = avgDaily > 0 ? currentStock / avgDaily : 999;
+                string daysLeftStr = daysLeftRaw > 100 ? ">100 Days" : $"{Math.Round(daysLeftRaw, 0)} Days";
+                string runoutDate = daysLeftRaw > 100 ? "N/A" : DateTime.UtcNow.AddDays(daysLeftRaw).ToString("MMM dd, yyyy");
+                
+                string badge = "NORMAL";
+                if (daysLeftRaw < 5 || currentStock == 0) badge = "CRITICAL";
+                else if (daysLeftRaw < 14 || currentStock < i.MinStockLevel) badge = "WARNING";
+
+                int recommended = Math.Max(0, i.MaxStockLevel - currentStock);
+                string uom = i.Uom?.Abbreviation ?? "units";
+
+                return new InventoryDemandForecastDto
+                {
+                    ItemName = i.ItemName,
+                    CurrentStock = $"{currentStock} {uom}",
+                    AvgDailyUsage = $"{avgDaily} {uom}/day",
+                    DaysLeft = daysLeftStr,
+                    RunoutDate = runoutDate,
+                    UrgencyBadge = badge,
+                    RecommendedReorderQty = $"{recommended} {uom}"
+                };
+            }).OrderBy(d => d.UrgencyBadge == "CRITICAL" ? 0 : d.UrgencyBadge == "WARNING" ? 1 : 2).ToList();
+
+            var response = new InventoryReportResponseDto
+            {
+                HistoricalAudit = historicalAudit,
+                DemandForecast = demandForecast
+            };
+
+            return ApiResponse<InventoryReportResponseDto>.SuccessResponse(response, "Inventory report generated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating inventory report.");
+            return ApiResponse<InventoryReportResponseDto>.FailureResponse("An error occurred while generating the inventory report.");
+        }
     }
 
     public async Task<ApiResponse<ProcurementReportResponseDto>> GetProcurementReportAsync(ReportFilterDto filter)
     {
-        var response = new ProcurementReportResponseDto
+        try
         {
-            HistoricalAudit = new List<HistoricalProcurementAuditDto>
+            var query = _context.PurchaseOrders
+                .AsNoTracking()
+                .Include(po => po.Supplier)
+                .Include(po => po.PurchaseOrderItems)
+                .AsQueryable();
+
+            if (filter != null)
             {
-                new HistoricalProcurementAuditDto { PoId = "PO-2026-089", IssueDate = "2026-06-12", SupplierName = "Supplier A - Batangas Flour", TotalItemsCount = "4 Items", TotalOrderedQty = "1,200 kg", DeliveryLeadTime = "3.2 Days", FulfillmentRate = "100%", InspectionStatus = "Passed" },
-                new HistoricalProcurementAuditDto { PoId = "PO-2026-082", IssueDate = "2026-06-04", SupplierName = "Supplier B - Manila Sugar", TotalItemsCount = "2 Items", TotalOrderedQty = "850 kg", DeliveryLeadTime = "6.8 Days", FulfillmentRate = "92.5%", InspectionStatus = "Partial Pass" }
-            },
-            ProcurementAdvice = new List<SmartProcurementAdviceDto>
-            {
-                new SmartProcurementAdviceDto { ItemName = "White Sugar", OrderTrend = "Upward +15% / month", PredictedNextMonthQty = "185 kg", AiConfidence = "High", RecommendationBasis = "Consistent upward purchasing trend over 6 months." },
-                new SmartProcurementAdviceDto { ItemName = "All-Purpose Flour", OrderTrend = "Stable", PredictedNextMonthQty = "202 kg", AiConfidence = "Medium", RecommendationBasis = "Stable historical demand with minor seasonal fluctuations." }
+                if (filter.StartDate.HasValue)
+                    query = query.Where(po => po.OrderDate >= filter.StartDate.Value.ToUniversalTime());
+                if (filter.EndDate.HasValue)
+                    query = query.Where(po => po.OrderDate <= filter.EndDate.Value.ToUniversalTime());
+                if (filter.Month.HasValue)
+                    query = query.Where(po => po.OrderDate.Month == filter.Month.Value);
+                if (filter.Year.HasValue)
+                    query = query.Where(po => po.OrderDate.Year == filter.Year.Value);
             }
-        };
-        return ApiResponse<ProcurementReportResponseDto>.SuccessResponse(response, "Procurement report generated successfully");
+
+            var pos = await query.ToListAsync();
+
+            var summary = new OrderFulfillmentSummaryDto
+            {
+                TotalOrders = pos.Count,
+                PendingOrders = pos.Count(po => po.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase)),
+                ArrivedOrders = pos.Count(po => po.Status.Equals("Arrived", StringComparison.OrdinalIgnoreCase)),
+                CompletedOrders = pos.Count(po => po.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)),
+                RejectedOrders = pos.Count(po => po.Status.Equals("Rejected", StringComparison.OrdinalIgnoreCase)),
+                CancelledOrders = pos.Count(po => po.Status.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
+            };
+
+            var historicalAudit = pos.Select(po =>
+            {
+                var allItems = po.PurchaseOrderItems ?? new List<Domains.Entities.PurchaseOrderItem>();
+                int totalItems = allItems.Count;
+                double totalOrdered = allItems.Sum(i => (double)i.PoItemQuantity);
+                double totalReceived = allItems.Sum(i => (double)i.ReceivedQuantity);
+                
+                string fulfillmentRate = totalOrdered > 0 ? $"{Math.Round((totalReceived / totalOrdered) * 100, 1)}%" : "0%";
+                
+                string leadTime = "Pending";
+                if (po.QaInspectedDate.HasValue)
+                {
+                    leadTime = $"{Math.Round((po.QaInspectedDate.Value - po.OrderDate).TotalDays, 1)} Days";
+                }
+
+                return new HistoricalProcurementAuditDto
+                {
+                    PoId = $"PO-{po.PoId:D4}",
+                    IssueDate = po.OrderDate.ToString("yyyy-MM-dd"),
+                    SupplierName = po.Supplier?.CompanyName ?? "Unknown",
+                    TotalItemsCount = $"{totalItems} Items",
+                    TotalOrderedQty = $"{totalOrdered}",
+                    DeliveryLeadTime = leadTime,
+                    FulfillmentRate = fulfillmentRate,
+                    InspectionStatus = string.IsNullOrWhiteSpace(po.QaStatus) ? "Pending QA" : po.QaStatus
+                };
+            }).OrderByDescending(h => h.IssueDate).ToList();
+
+            var response = new ProcurementReportResponseDto
+            {
+                OrderFulfillmentSummary = summary,
+                HistoricalAudit = historicalAudit
+            };
+
+            return ApiResponse<ProcurementReportResponseDto>.SuccessResponse(response, "Procurement report generated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating procurement report.");
+            return ApiResponse<ProcurementReportResponseDto>.FailureResponse("An error occurred while generating the procurement report.");
+        }
     }
 
     public async Task<ApiResponse<ProductionQualityReportResponseDto>> GetProductionReportAsync(ReportFilterDto filter)
     {
-        var response = new ProductionQualityReportResponseDto
+        try
         {
-            YieldEfficiency = new List<KitchenYieldEfficiencyDto>
+            var query = _context.ProductionBatches
+                .AsNoTracking()
+                .Include(b => b.Recipe)
+                .Include(b => b.Product)
+                    .ThenInclude(p => p.Item)
+                .AsQueryable();
+
+            if (filter != null)
             {
-                new KitchenYieldEfficiencyDto { RecipeName = "Pan de Sal Batch A", TotalBatchesCooked = "20 Batches", TotalOutputQty = "2,400 Pcs", YieldSuccessRate = "95.0%", TotalRejectedQty = "120 Pcs", IngredientWasteQty = "4.2 kg", CommonFailureReason = "Over-baking / Crust Burn" },
-                new KitchenYieldEfficiencyDto { RecipeName = "Spanish Bread Batch B", TotalBatchesCooked = "14 Batches", TotalOutputQty = "1,120 Pcs", YieldSuccessRate = "92.8%", TotalRejectedQty = "80 Pcs", IngredientWasteQty = "3.1 kg", CommonFailureReason = "Dough Proofing Under-expansion" }
+                if (filter.StartDate.HasValue)
+                    query = query.Where(b => b.ProductionDate >= filter.StartDate.Value.ToUniversalTime());
+                if (filter.EndDate.HasValue)
+                    query = query.Where(b => b.ProductionDate <= filter.EndDate.Value.ToUniversalTime());
+                if (filter.Month.HasValue)
+                    query = query.Where(b => b.ProductionDate.Month == filter.Month.Value);
+                if (filter.Year.HasValue)
+                    query = query.Where(b => b.ProductionDate.Year == filter.Year.Value);
             }
-        };
-        return ApiResponse<ProductionQualityReportResponseDto>.SuccessResponse(response, "Production report generated successfully");
+
+            var batches = await query.ToListAsync();
+
+            int totalBatches = batches.Count;
+            int scheduledBatches = batches.Count(b => string.Equals(b.Status, "Scheduled", StringComparison.OrdinalIgnoreCase));
+            int inProgressBatches = batches.Count(b => string.Equals(b.Status, "In Progress", StringComparison.OrdinalIgnoreCase));
+            int passedQaBatches = batches.Count(b => string.Equals(b.QualityStatus, "Approved", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Passed QA", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Inventory Added", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Completed", StringComparison.OrdinalIgnoreCase));
+            int rejectedBatches = batches.Count(b => string.Equals(b.QualityStatus, "Rejected", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Rejected", StringComparison.OrdinalIgnoreCase));
+
+            var groupedByRecipe = batches
+                .GroupBy(b => b.Recipe?.RecipeName ?? b.Product?.Item?.ItemName ?? "Unknown Recipe")
+                .Select(g =>
+                {
+                    int cooked = g.Count();
+                    int totalOutput = g.Sum(b => b.ActualQuantity > 0 ? b.ActualQuantity : b.EstimatedQuantity);
+                    int passed = g.Count(b => string.Equals(b.QualityStatus, "Approved", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Passed QA", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Inventory Added", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Completed", StringComparison.OrdinalIgnoreCase));
+                    
+                    double yieldRate = cooked > 0 ? Math.Round((passed / (double)cooked) * 100, 1) : 0;
+                    int rejectedQty = g.Where(b => string.Equals(b.QualityStatus, "Rejected", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Rejected", StringComparison.OrdinalIgnoreCase)).Sum(b => b.EstimatedQuantity);
+
+                    var topReason = g.Where(b => !string.IsNullOrWhiteSpace(b.RejectionReason))
+                        .GroupBy(b => b.RejectionReason)
+                        .OrderByDescending(rg => rg.Count())
+                        .Select(rg => rg.Key)
+                        .FirstOrDefault() ?? "None";
+
+                    return new
+                    {
+                        RecipeName = g.Key,
+                        CookedBatches = cooked,
+                        TotalOutput = totalOutput,
+                        YieldSuccessRate = yieldRate,
+                        RejectedQty = rejectedQty,
+                        Reason = topReason
+                    };
+                })
+                .OrderByDescending(r => r.CookedBatches)
+                .ToList();
+
+            string mostProduced = groupedByRecipe.FirstOrDefault() != null ? $"{groupedByRecipe.First().RecipeName} ({groupedByRecipe.First().CookedBatches} Batches)" : "None";
+            string seldomProduced = groupedByRecipe.LastOrDefault() != null ? $"{groupedByRecipe.Last().RecipeName} ({groupedByRecipe.Last().CookedBatches} Batches)" : "None";
+
+            var summary = new ProductionSummaryDto
+            {
+                TotalBatches = totalBatches,
+                ScheduledBatches = scheduledBatches,
+                InProgressBatches = inProgressBatches,
+                PassedQaBatches = passedQaBatches,
+                RejectedBatches = rejectedBatches,
+                MostProducedItem = mostProduced,
+                SeldomProducedItem = seldomProduced
+            };
+
+            var yieldEfficiency = groupedByRecipe.Select(r => new KitchenYieldEfficiencyDto
+            {
+                RecipeName = r.RecipeName,
+                TotalBatchesCooked = $"{r.CookedBatches} Batches",
+                TotalOutputQty = $"{r.TotalOutput:N0} Pcs",
+                YieldSuccessRate = $"{r.YieldSuccessRate:F1}%",
+                TotalRejectedQty = $"{r.RejectedQty:N0} Pcs",
+                IngredientWasteQty = "0 kg",
+                CommonFailureReason = r.Reason
+            }).ToList();
+
+            var response = new ProductionQualityReportResponseDto
+            {
+                Summary = summary,
+                YieldEfficiency = yieldEfficiency
+            };
+
+            return ApiResponse<ProductionQualityReportResponseDto>.SuccessResponse(response, "Production report generated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating production report.");
+            return ApiResponse<ProductionQualityReportResponseDto>.FailureResponse("An error occurred while generating the production report.");
+        }
     }
 
     public async Task<ApiResponse<SupplierPerformanceReportResponseDto>> GetSupplierReportAsync(ReportFilterDto filter)
     {
-        var response = new SupplierPerformanceReportResponseDto
+        try
         {
-            VendorScorecard = new List<VendorScorecardAuditDto>
+            var suppliers = await _context.Suppliers
+                .AsNoTracking()
+                .Where(s => s.IsActive)
+                .Include(s => s.PurchaseOrders)
+                    .ThenInclude(po => po.PurchaseOrderItems)
+                .ToListAsync();
+
+            var scorecard = new List<VendorScorecardAuditDto>();
+
+            foreach (var supplier in suppliers)
             {
-                new VendorScorecardAuditDto { SupplierName = "Supplier A - Flour Corp", TotalOrdersPlaced = "15 Orders", OnTimeDeliveries = "15 Orders", LateDeliveries = "0 Orders", OrderAccuracyRate = "98.5%", AverageLeadTime = "3.2 Days", RejectionRate = "0.0%", OverallVendorGrade = "Grade A 98.5%" },
-                new VendorScorecardAuditDto { SupplierName = "Supplier B - Sugar Traders", TotalOrdersPlaced = "12 Orders", OnTimeDeliveries = "10 Orders", LateDeliveries = "2 Orders", OrderAccuracyRate = "89.0%", AverageLeadTime = "6.8 Days", RejectionRate = "8.3%", OverallVendorGrade = "Grade B 84.2%" }
+                var filteredPOs = supplier.PurchaseOrders
+                    .Where(po => IsDateInRange(po.OrderDate, filter))
+                    .ToList();
+
+                if (!filteredPOs.Any()) continue;
+
+                int totalOrders = filteredPOs.Count;
+                int onTime = filteredPOs.Count(po => po.QaInspectedDate.HasValue && po.QaInspectedDate.Value.Date <= po.ExpectedArrivalDate.Date);
+                int late = filteredPOs.Count(po => po.QaInspectedDate.HasValue && po.QaInspectedDate.Value.Date > po.ExpectedArrivalDate.Date);
+
+                var allItems = filteredPOs.SelectMany(po => po.PurchaseOrderItems).ToList();
+                double accuracyRate = 0;
+                if (allItems.Any())
+                {
+                    double totalOrdered = allItems.Sum(i => (double)i.PoItemQuantity);
+                    double totalReceived = allItems.Sum(i => (double)i.ReceivedQuantity);
+                    accuracyRate = totalOrdered > 0 ? Math.Round((totalReceived / totalOrdered) * 100, 1) : 0;
+                }
+
+                var inspectedPOs = filteredPOs.Where(po => po.QaInspectedDate.HasValue).ToList();
+                double avgLeadDays = 0;
+                if (inspectedPOs.Any())
+                {
+                    avgLeadDays = Math.Round(inspectedPOs.Average(po => (po.QaInspectedDate!.Value - po.OrderDate).TotalDays), 1);
+                }
+
+                int rejectedCount = inspectedPOs.Count(po => string.Equals(po.QaStatus, "Rejected", StringComparison.OrdinalIgnoreCase));
+                double rejectionRate = inspectedPOs.Any() ? Math.Round((rejectedCount / (double)inspectedPOs.Count) * 100, 1) : 0;
+
+                double onTimeRate = totalOrders > 0 ? Math.Round((onTime / (double)totalOrders) * 100, 1) : 0;
+                string grade = onTimeRate >= 90 ? "A" : onTimeRate >= 80 ? "B" : onTimeRate >= 70 ? "C" : "F";
+
+                var orderTransactions = filteredPOs
+                    .OrderByDescending(po => po.OrderDate)
+                    .Select(po => new SupplierOrderTransactionDto
+                    {
+                        PoId = po.PoId,
+                        PoCode = $"PO-{po.PoId:D4}",
+                        OrderDate = po.OrderDate.ToString("yyyy-MM-dd"),
+                        ExpectedArrivalDate = po.ExpectedArrivalDate.ToString("yyyy-MM-dd"),
+                        Status = string.IsNullOrWhiteSpace(po.Status) ? "Pending" : po.Status,
+                        TotalItemsCount = po.PurchaseOrderItems?.Count ?? 0,
+                        TotalAmount = po.TotalAmount,
+                        QaStatus = string.IsNullOrWhiteSpace(po.QaStatus) ? "Pending QA" : po.QaStatus,
+                        InspectedDate = po.QaInspectedDate.HasValue ? po.QaInspectedDate.Value.ToString("yyyy-MM-dd HH:mm") : "N/A"
+                    })
+                    .ToList();
+
+                scorecard.Add(new VendorScorecardAuditDto
+                {
+                    SupplierId = supplier.SupplierId,
+                    SupplierName = supplier.CompanyName,
+                    TotalOrdersPlaced = $"{totalOrders} Orders",
+                    OnTimeDeliveries = $"{onTime} Orders",
+                    LateDeliveries = $"{late} Orders",
+                    OrderAccuracyRate = $"{accuracyRate:F1}%",
+                    AverageLeadTime = $"{avgLeadDays:F1} Days",
+                    RejectionRate = $"{rejectionRate:F1}%",
+                    OverallVendorGrade = $"Grade {grade} ({onTimeRate:F1}%)",
+                    Orders = orderTransactions
+                });
             }
-        };
-        return ApiResponse<SupplierPerformanceReportResponseDto>.SuccessResponse(response, "Supplier report generated successfully");
+
+            var response = new SupplierPerformanceReportResponseDto
+            {
+                VendorScorecard = scorecard.OrderByDescending(s => s.TotalOrdersPlaced)
+            };
+
+            return ApiResponse<SupplierPerformanceReportResponseDto>.SuccessResponse(response, "Supplier performance report generated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating supplier performance report.");
+            return ApiResponse<SupplierPerformanceReportResponseDto>.FailureResponse("An error occurred while generating the supplier report.");
+        }
     }
 
     public async Task<ApiResponse<DistributionReportResponseDto>> GetDistributionReportAsync(ReportFilterDto filter)
     {
-        var response = new DistributionReportResponseDto
+        try
         {
-            LogisticsVelocity = new List<LogisticsTransferVelocityDto>
+            var query = _context.StockTransfers
+                .AsNoTracking()
+                .Include(t => t.SourceLocation)
+                .Include(t => t.DestLocation)
+                .Include(t => t.Product)
+                    .ThenInclude(p => p.Item)
+                .AsQueryable();
+
+            if (filter != null)
             {
-                new LogisticsTransferVelocityDto { TransferId = "TR-2026-104", SourceLocation = "Central Warehouse", DestinationBranch = "Branch 1 - Quezon City", DispatchDate = "2026-06-15 08:00", ReceiveDate = "2026-06-15 09:30", TransitDuration = "1.5 Hours", AssignedDriver = "Driver Juan Cruz", TransferStatus = "Delivered" },
-                new LogisticsTransferVelocityDto { TransferId = "TR-2026-108", SourceLocation = "Central Warehouse", DestinationBranch = "Branch 2 - Makati", DispatchDate = "2026-06-16 10:00", ReceiveDate = "2026-06-16 12:06", TransitDuration = "2.1 Hours", AssignedDriver = "Driver Mario Santos", TransferStatus = "Delivered" }
+                if (filter.StartDate.HasValue)
+                    query = query.Where(t => t.TransferDate >= filter.StartDate.Value.ToUniversalTime());
+                if (filter.EndDate.HasValue)
+                    query = query.Where(t => t.TransferDate <= filter.EndDate.Value.ToUniversalTime());
+                if (filter.Month.HasValue)
+                    query = query.Where(t => t.TransferDate.Month == filter.Month.Value);
+                if (filter.Year.HasValue)
+                    query = query.Where(t => t.TransferDate.Year == filter.Year.Value);
             }
-        };
-        return ApiResponse<DistributionReportResponseDto>.SuccessResponse(response, "Distribution report generated successfully");
+
+            var transfers = await query.OrderByDescending(t => t.TransferDate).ToListAsync();
+
+            var logisticsVelocity = transfers.Select(t => new LogisticsTransferVelocityDto
+            {
+                TransferId = $"TR-{t.TransferId:D4}",
+                SourceLocation = t.SourceLocation?.LocationName ?? "Main Warehouse",
+                DestinationBranch = t.DestLocation?.LocationName ?? "Branch Location",
+                DispatchDate = t.TransferDate.ToString("yyyy-MM-dd HH:mm"),
+                ReceiveDate = t.TransferDate.AddHours(1).ToString("yyyy-MM-dd HH:mm"),
+                TransitDuration = "1.0 Hours",
+                AssignedDriver = "Assigned Driver",
+                TransferStatus = string.IsNullOrWhiteSpace(t.Status) ? "Completed" : t.Status
+            }).ToList();
+
+            var response = new DistributionReportResponseDto
+            {
+                LogisticsVelocity = logisticsVelocity
+            };
+
+            return ApiResponse<DistributionReportResponseDto>.SuccessResponse(response, "Distribution report generated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating distribution report.");
+            return ApiResponse<DistributionReportResponseDto>.FailureResponse("An error occurred while generating the distribution report.");
+        }
+    }
+
+    public async Task<ApiResponse<SupplyListReportResponseDto>> GetSupplyListReportAsync(ReportFilterDto filter)
+    {
+        try
+        {
+            var items = await _context.Items
+                .AsNoTracking()
+                .Include(i => i.Category)
+                .Include(i => i.Uom)
+                .Include(i => i.Inventories)
+                .Include(i => i.PurchaseOrderItems)
+                    .ThenInclude(poi => poi.Supplier)
+                .ToListAsync();
+
+            SupplyListItemDto MapItem(Item i)
+            {
+                int currentStock = i.Inventories?.Sum(inv => inv.CurrentStock) ?? 0;
+                string supplierName = i.PurchaseOrderItems?
+                    .Where(poi => poi.Supplier != null)
+                    .Select(poi => poi.Supplier!.CompanyName)
+                    .FirstOrDefault() ?? "N/A";
+
+                string stockStatus = "Optimal Level";
+                int suggestedReorder = 0;
+
+                if (currentStock == 0)
+                {
+                    stockStatus = "Out of Stock";
+                    suggestedReorder = i.MaxStockLevel;
+                }
+                else if (currentStock < i.MinStockLevel)
+                {
+                    stockStatus = "Below Min Stock";
+                    suggestedReorder = i.MaxStockLevel - currentStock;
+                }
+                else if (currentStock > i.MaxStockLevel)
+                {
+                    stockStatus = "Overstocked";
+                    suggestedReorder = 0;
+                }
+
+                return new SupplyListItemDto
+                {
+                    ItemNo = i.ItemId,
+                    ItemName = i.ItemName,
+                    Category = i.Category?.CategoryName ?? "Raw Materials",
+                    Unit = i.Uom?.Name ?? i.Uom?.Abbreviation ?? "",
+                    PrimarySupplier = supplierName,
+                    CurrentStock = currentStock,
+                    MinStock = i.MinStockLevel,
+                    MaxStock = i.MaxStockLevel,
+                    StockStatus = stockStatus,
+                    SuggestedReorderQty = Math.Max(0, suggestedReorder),
+                    Status = i.IsActive ? "Active" : "Inactive"
+                };
+            }
+
+            var mappedItems = items.Select(MapItem).ToList();
+
+            var rawMaterials = mappedItems
+                .Where(i => !string.Equals(i.Category, "Tools & Supplies", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var tools = mappedItems
+                .Where(i => string.Equals(i.Category, "Tools & Supplies", StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            var summary = new SupplyListSummaryDto
+            {
+                TotalItemsTracked = mappedItems.Count,
+                CriticalLowStockCount = mappedItems.Count(i => i.StockStatus == "Out of Stock" || i.StockStatus == "Below Min Stock"),
+                OptimalStockCount = mappedItems.Count(i => i.StockStatus == "Optimal Level"),
+                TotalReorderQuantityNeeded = mappedItems.Sum(i => i.SuggestedReorderQty)
+            };
+
+            var response = new SupplyListReportResponseDto
+            {
+                Summary = summary,
+                RawMaterials = rawMaterials,
+                ToolsAndSupplies = tools
+            };
+
+            return ApiResponse<SupplyListReportResponseDto>.SuccessResponse(response, "Supply list inventory health report generated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating supply list report.");
+            return ApiResponse<SupplyListReportResponseDto>.FailureResponse("An error occurred while generating the supply list report.");
+        }
+    }
+
+    public async Task<ApiResponse<RecipeReportResponseDto>> GetRecipeReportAsync(ReportFilterDto filter)
+    {
+        try
+        {
+            var recipes = await _context.Recipes
+                .AsNoTracking()
+                .Include(r => r.Product)
+                    .ThenInclude(p => p!.Item)
+                .Include(r => r.RecipeIngredients)
+                .ToListAsync();
+
+            var result = recipes.Select(r => new RecipeReportItemDto
+            {
+                RecipeNo = r.RecipeId,
+                RecipeName = r.RecipeName,
+                FinishedProduct = r.Product?.Item?.ItemName ?? r.Product?.Variant ?? "N/A",
+                TargetYield = r.OutputQuantity,
+                IngredientsCount = r.RecipeIngredients.Count,
+                Status = r.IsActive ? "Active" : "Inactive"
+            }).ToList();
+
+            var response = new RecipeReportResponseDto
+            {
+                Recipes = result
+            };
+
+            return ApiResponse<RecipeReportResponseDto>.SuccessResponse(response, "Recipe report generated successfully");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error generating recipe report.");
+            return ApiResponse<RecipeReportResponseDto>.FailureResponse("An error occurred while generating the recipe report.");
+        }
     }
 }

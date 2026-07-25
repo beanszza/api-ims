@@ -1,7 +1,1 @@
-namespace Infrastructures.Persistence;
-
-public class MongoDbSettings
-{
-    public string ConnectionString { get; set; } = null!;
-    public string DatabaseName { get; set; } = null!;
-}
+// Moved to ms-analytics/Infrastructure/MongoDbSettings.cs

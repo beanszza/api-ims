@@ -3,6 +3,7 @@ using Applications.Interfaces;
 using Domains.Entities;
 using Infrastructures.Persistence;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http;
 
 namespace Applications.Services;
 
@@ -235,7 +236,7 @@ public class ProductionService : IProductionService
         return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Recipe?.Product?.Item?.ItemName ?? "");
     }
 
-    public async Task<ProductionBatchResponse> UploadImageAsync(int batchId, string imageUrl)
+    public async Task<ProductionBatchResponse> UploadImageAsync(int batchId, IFormFile file)
     {
         var batch = await _context.ProductionBatches
             .Include(b => b.Recipe)
@@ -245,7 +246,16 @@ public class ProductionService : IProductionService
 
         if (batch == null) throw new Exception("Batch not found.");
 
-        batch.ImageUrl = imageUrl;
+        if (file == null || file.Length == 0) throw new Exception("No file was uploaded.");
+
+        using (var ms = new MemoryStream())
+        {
+            await file.CopyToAsync(ms);
+            var fileBytes = ms.ToArray();
+            string base64String = Convert.ToBase64String(fileBytes);
+            batch.ImageUrl = $"data:{file.ContentType};base64,{base64String}";
+        }
+
         await _context.SaveChangesAsync();
 
         return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Recipe?.Product?.Item?.ItemName ?? "");

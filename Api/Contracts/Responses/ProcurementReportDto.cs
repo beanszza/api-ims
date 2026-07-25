@@ -4,8 +4,18 @@ namespace api_scm.Api.Contracts.Responses;
 
 public class ProcurementReportResponseDto
 {
+    public OrderFulfillmentSummaryDto OrderFulfillmentSummary { get; set; } = new OrderFulfillmentSummaryDto();
     public IEnumerable<HistoricalProcurementAuditDto> HistoricalAudit { get; set; } = new List<HistoricalProcurementAuditDto>();
-    public IEnumerable<SmartProcurementAdviceDto> ProcurementAdvice { get; set; } = new List<SmartProcurementAdviceDto>();
+}
+
+public class OrderFulfillmentSummaryDto
+{
+    public int TotalOrders { get; set; }
+    public int PendingOrders { get; set; }
+    public int ArrivedOrders { get; set; }
+    public int CompletedOrders { get; set; }
+    public int RejectedOrders { get; set; }
+    public int CancelledOrders { get; set; }
 }
 
 public class HistoricalProcurementAuditDto
@@ -18,13 +28,4 @@ public class HistoricalProcurementAuditDto
     public string DeliveryLeadTime { get; set; } = string.Empty;
     public string FulfillmentRate { get; set; } = string.Empty;
     public string InspectionStatus { get; set; } = string.Empty;
-}
-
-public class SmartProcurementAdviceDto
-{
-    public string ItemName { get; set; } = string.Empty;
-    public string OrderTrend { get; set; } = string.Empty;
-    public string PredictedNextMonthQty { get; set; } = string.Empty;
-    public string AiConfidence { get; set; } = string.Empty;
-    public string RecommendationBasis { get; set; } = string.Empty;
 }

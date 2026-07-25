@@ -71,21 +71,8 @@ public class ProductionBatchesController : ControllerBase
             if (!allowedExtensions.Contains(extension))
                 return BadRequest(new { message = "Invalid file type. Only JPG, JPEG, and PNG are allowed." });
 
-            // Using IWebHostEnvironment is best, but for simplicity we assume wwwroot
-            var uploadPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads", "production");
-            if (!Directory.Exists(uploadPath))
-                Directory.CreateDirectory(uploadPath);
-
-            var fileName = $"{Guid.NewGuid()}{extension}";
-            var filePath = Path.Combine(uploadPath, fileName);
-
-            using (var stream = new FileStream(filePath, FileMode.Create))
-            {
-                await file.CopyToAsync(stream);
-            }
-
-            var imageUrl = $"/uploads/production/{fileName}";
-            var result = await _productionService.UploadImageAsync(id, imageUrl);
+            // Pass the raw IFormFile down to the service for database storage
+            var result = await _productionService.UploadImageAsync(id, file);
 
             return Ok(result);
         }

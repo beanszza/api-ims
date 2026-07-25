@@ -363,23 +363,16 @@ public class PurchaseOrderService : IPurchaseOrderService
                 return ApiResponse<PurchaseOrderResponse>.FailureResponse("No file was uploaded.");
             }
 
-            // Create target folder in wwwroot
-            var uploadsFolder = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "receipts");
-            if (!Directory.Exists(uploadsFolder))
+            // Convert IFormFile to Base64 string
+            using (var ms = new MemoryStream())
             {
-                Directory.CreateDirectory(uploadsFolder);
+                await file.CopyToAsync(ms);
+                var fileBytes = ms.ToArray();
+                string base64String = Convert.ToBase64String(fileBytes);
+                // Create a data URI scheme string (e.g. data:image/jpeg;base64,....)
+                order.ProofImageUrl = $"data:{file.ContentType};base64,{base64String}";
             }
 
-            var extension = Path.GetExtension(file.FileName);
-            var uniqueFileName = $"receipt_{id}_{Guid.NewGuid()}{extension}";
-            var filePath = Path.Combine(uploadsFolder, uniqueFileName);
-
-            using (var stream = new FileStream(filePath, FileMode.Create))
-            {
-                await file.CopyToAsync(stream);
-            }
-
-            order.ProofImageUrl = $"/receipts/{uniqueFileName}";
             _context.PurchaseOrders.Update(order);
             await _context.SaveChangesAsync();
 

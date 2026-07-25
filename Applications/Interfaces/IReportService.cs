@@ -13,4 +13,6 @@ public interface IReportService
     Task<ApiResponse<ProductionQualityReportResponseDto>> GetProductionReportAsync(ReportFilterDto filter);
     Task<ApiResponse<SupplierPerformanceReportResponseDto>> GetSupplierReportAsync(ReportFilterDto filter);
     Task<ApiResponse<DistributionReportResponseDto>> GetDistributionReportAsync(ReportFilterDto filter);
+    Task<ApiResponse<SupplyListReportResponseDto>> GetSupplyListReportAsync(ReportFilterDto filter);
+    Task<ApiResponse<RecipeReportResponseDto>> GetRecipeReportAsync(ReportFilterDto filter);
 }
