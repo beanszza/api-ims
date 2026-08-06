@@ -1,14 +1,8 @@
 using Applications.Interfaces;
 using Applications.Services;
 using Infrastructures.Persistence;
-using ms_analytics.Controllers;
-using ms_analytics.Infrastructure;
-using ms_analytics.Models;
-using ms_analytics.Services;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.ML;
 using Microsoft.OpenApi;
-using MongoDB.Driver;
 using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -136,51 +130,7 @@ builder.Services.AddDbContext<ScmDbContext>(options =>
     }
 });
 
-// Configure MongoDB
-builder.Services.Configure<MongoDbSettings>(
-    builder.Configuration.GetSection("MongoDbSettings"));
 
-builder.Services.AddSingleton<IMongoClient>(sp =>
-{
-    var settings = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MongoDbSettings>>().Value;
-    var mongoUrl = new MongoUrl(settings.ConnectionString ?? "mongodb://localhost:27017");
-    var clientSettings = MongoClientSettings.FromUrl(mongoUrl);
-    clientSettings.ServerSelectionTimeout = TimeSpan.FromSeconds(2);
-    clientSettings.ConnectTimeout = TimeSpan.FromSeconds(2);
-    return new MongoClient(clientSettings);
-});
-
-builder.Services.AddScoped<IMongoDatabase>(sp =>
-{
-    var client = sp.GetRequiredService<IMongoClient>();
-    var settings = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<MongoDbSettings>>().Value;
-    return client.GetDatabase(settings.DatabaseName ?? "scms_analytics");
-});
-
-// Configure Redis (IDistributedCache)
-var redisConnectionString = builder.Configuration.GetSection("RedisSettings:ConnectionString").Value ?? "localhost:6379,abortConnect=false";
-builder.Services.AddStackExchangeRedisCache(options =>
-{
-    options.Configuration = redisConnectionString + ",connectTimeout=1000,syncTimeout=1000";
-    options.InstanceName = "scms_";
-});
-
-builder.Services.AddScoped<RedisCacheService>();
-builder.Services.AddScoped<AnalyticsCompilerService>();
-
-// Configure ML.NET
-builder.Services.Configure<MLSettings>(
-    builder.Configuration.GetSection("MLSettings"));
-
-var mlModelPath = builder.Configuration.GetSection("MLSettings:ModelPath").Value;
-if (!string.IsNullOrEmpty(mlModelPath) && File.Exists(mlModelPath))
-{
-    builder.Services.AddPredictionEnginePool<ModelInput, ModelOutput>()
-        .FromFile(modelName: "RecommendationModel", filePath: mlModelPath, watchForChanges: true);
-    builder.Services.AddScoped<PredictionService>();
-}
-
-builder.Services.AddScoped<ms_analytics.Infrastructure.ModelBuilder>();
 
 builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
