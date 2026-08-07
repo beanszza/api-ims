@@ -29,22 +29,22 @@ public class InventoryService : IInventoryService
 
             if (!string.IsNullOrWhiteSpace(categoryName))
             {
-                // To support 'Raw Materials', 'Tools', 'Finished Goods' matching:
-                if (categoryName.ToLower().Contains("raw material"))
+                var catLower = categoryName.ToLower();
+                if (catLower.Contains("raw material"))
                 {
-                    query = query.Where(i => i.Item != null && i.Item.Category != null && i.Item.Category.CategoryName.ToLower().Contains("raw material") && (i.Location == null || i.Location.LocationName != "Finished Goods"));
+                    query = query.Where(i => (i.Item != null && i.Item.Category != null && i.Item.Category.CategoryName.ToLower().Contains("raw material")) && (i.Location == null || !i.Location.LocationName.ToLower().Contains("finished")));
                 }
-                else if (categoryName.ToLower().Contains("tool"))
+                else if (catLower.Contains("tool"))
                 {
                     query = query.Where(i => i.Item != null && i.Item.Category != null && (i.Item.Category.CategoryName.ToLower().Contains("tool") || i.Item.Category.CategoryName.ToLower().Contains("equipment")));
                 }
-                else if (categoryName.ToLower().Contains("finished good"))
+                else if (catLower.Contains("finished good"))
                 {
-                    query = query.Where(i => (i.Item != null && i.Item.Category != null && (i.Item.Category.CategoryName.ToLower().Contains("finished good") || i.Item.Category.CategoryName.ToLower().Contains("product"))) || (i.Location != null && i.Location.LocationName == "Finished Goods"));
+                    query = query.Where(i => (i.Item != null && i.Item.Category != null && (i.Item.Category.CategoryName.ToLower().Contains("finished good") || i.Item.Category.CategoryName.ToLower().Contains("product"))) || (i.Location != null && i.Location.LocationName.ToLower().Contains("finished")));
                 }
                 else
                 {
-                    query = query.Where(i => i.Item != null && i.Item.Category != null && i.Item.Category.CategoryName.ToLower().Contains(categoryName.ToLower()));
+                    query = query.Where(i => i.Item != null && i.Item.Category != null && i.Item.Category.CategoryName.ToLower().Contains(catLower));
                 }
             }
 

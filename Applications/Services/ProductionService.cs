@@ -73,6 +73,10 @@ public class ProductionService : IProductionService
         bool isStarting = batch.Status == "Scheduled" && request.Stage != "QA Review" && request.Stage != "Completed" && request.Stage != "Cancelled";
 
         batch.Stage = request.Stage;
+        if (request.ActualQuantity.HasValue && request.ActualQuantity.Value > 0)
+        {
+            batch.ActualQuantity = request.ActualQuantity.Value;
+        }
         if (request.Stage == "Completed")
         {
             batch.Status = "Completed";
@@ -183,8 +187,8 @@ public class ProductionService : IProductionService
     {
         var batch = await _context.ProductionBatches
             .Include(b => b.Recipe)
-            .ThenInclude(r => r.Product)
-            .ThenInclude(p => p.Item)
+                .ThenInclude(r => r.Product)
+                    .ThenInclude(p => p.Item)
             .FirstOrDefaultAsync(b => b.BatchId == batchId);
 
         if (batch == null) throw new Exception("Batch not found.");
@@ -193,14 +197,57 @@ public class ProductionService : IProductionService
         // Determine actual quantity produced - assuming estimated for now if not set
         int actualQty = batch.ActualQuantity > 0 ? batch.ActualQuantity : batch.EstimatedQuantity;
 
-        // Add finished goods to inventory. Fetch the "Finished Goods" location.
+        // Add finished goods to inventory. Fetch or create the "Finished Goods" location.
         var finishedGoodsLocation = await _context.Locations
-            .FirstOrDefaultAsync(l => l.LocationName == "Finished Goods");
+            .FirstOrDefaultAsync(l => l.LocationName == "Finished Goods" || l.LocationName.ToLower().Contains("finished"));
             
-        var locationId = finishedGoodsLocation?.LocationId ?? 1; // Fallback to 1
+        if (finishedGoodsLocation == null)
+        {
+            finishedGoodsLocation = new Domains.Entities.Location
+            {
+                LocationName = "Finished Goods",
+                Address = "Main Plant",
+                Status = "Active"
+            };
+            _context.Locations.Add(finishedGoodsLocation);
+            await _context.SaveChangesAsync();
+        }
+        var locationId = finishedGoodsLocation.LocationId;
         
-        // Determine actual item ID from the finished product
-        var actualItemId = batch.Recipe?.Product?.ItemId ?? throw new Exception("Item ID not found for this product.");
+        // Determine actual item ID from the finished product or recipe
+        int actualItemId = 0;
+        if (batch.Recipe?.Product?.ItemId > 0)
+        {
+            actualItemId = batch.Recipe.Product.ItemId;
+        }
+        else
+        {
+            var product = await _context.FinishedProducts.Include(fp => fp.Item).FirstOrDefaultAsync(fp => fp.ProductId == batch.ProductId);
+            if (product?.ItemId > 0)
+            {
+                actualItemId = product.ItemId;
+            }
+        }
+
+        if (actualItemId == 0) throw new Exception("Item ID not found for this product.");
+
+        // Ensure the item is categorized under Finished Good so tab queries find it
+        var finishedGoodCategory = await _context.Categories
+            .FirstOrDefaultAsync(c => c.CategoryName.ToLower().Contains("finished good"));
+
+        if (finishedGoodCategory == null)
+        {
+            finishedGoodCategory = new Domains.Entities.Category { CategoryName = "Finished Good", Description = "Finished Goods" };
+            _context.Categories.Add(finishedGoodCategory);
+            await _context.SaveChangesAsync();
+        }
+
+        var item = await _context.Items.FirstOrDefaultAsync(i => i.ItemId == actualItemId);
+        if (item != null)
+        {
+            item.CategoryId = finishedGoodCategory.CategoryId;
+            await _context.SaveChangesAsync();
+        }
 
         var existingInventory = await _context.Inventories
             .FirstOrDefaultAsync(i => i.ItemId == actualItemId && i.LocationId == locationId);

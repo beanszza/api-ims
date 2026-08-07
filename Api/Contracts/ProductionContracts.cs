@@ -32,6 +32,7 @@ public class ProductionBatchResponse
 public class UpdateStageRequest
 {
     public string Stage { get; set; } = string.Empty;
+    public int? ActualQuantity { get; set; }
 }
 
 public class UpdateQaNotesRequest
