@@ -359,6 +359,121 @@ public sealed class StockPostingServiceTests(ScmDatabaseFixture fixture) : Datab
             .WithMessage("*already been reversed*");
     }
 
+    // ---------- Task 10: Inventory.CurrentStock as a cached projection ----------
+
+    [Fact]
+    public async Task Receiving_available_stock_creates_the_cached_balance()
+    {
+        await using var context = CreateContext();
+        var world = await TestDataSeeder.SeedBaselineAsync(context);
+        var service = NewService(context);
+
+        await service.ReceiveAsync(PurchasedUbe(world, 90m, world.SupplierAId));
+        await context.SaveChangesAsync();
+
+        await using var verify = CreateContext();
+        (await verify.Inventories.SingleAsync(
+                i => i.ItemId == world.UbeItemId && i.LocationId == world.MainWarehouseId))
+            .CurrentStock.Should().Be(90m, "the cache is created, not just updated, on first receipt");
+    }
+
+    [Fact]
+    public async Task A_quarantined_receipt_does_not_move_the_cache_until_released()
+    {
+        await using var context = CreateContext();
+        var world = await TestDataSeeder.SeedBaselineAsync(context);
+        var service = NewService(context);
+
+        await service.ReceiveAsync(
+            PurchasedUbe(world, 50m, world.SupplierAId) with { Status = LotStatus.Quarantine });
+        await context.SaveChangesAsync();
+
+        await using var verify = CreateContext();
+        (await verify.Inventories.SingleOrDefaultAsync(
+                i => i.ItemId == world.UbeItemId && i.LocationId == world.MainWarehouseId))
+            .Should().BeNull("quarantined stock is visible on the lot but not yet part of on-hand");
+    }
+
+    [Fact]
+    public async Task Consuming_decrements_the_cached_balance()
+    {
+        await using var context = CreateContext();
+        var world = await TestDataSeeder.SeedBaselineAsync(context);
+        var service = NewService(context);
+
+        var lot = await service.ReceiveAsync(PurchasedUbe(world, 100m, world.SupplierAId));
+        await context.SaveChangesAsync();
+
+        await service.ConsumeAsync(
+            [new LotDraw(lot.LotId, 30m)], MovementType.ProductionConsumption, "ProductionOrder", "MB-1");
+        await context.SaveChangesAsync();
+
+        await using var verify = CreateContext();
+        (await verify.Inventories.SingleAsync(
+                i => i.ItemId == world.UbeItemId && i.LocationId == world.MainWarehouseId))
+            .CurrentStock.Should().Be(70m);
+    }
+
+    [Fact]
+    public async Task A_transfer_moves_the_cached_balance_between_locations()
+    {
+        await using var context = CreateContext();
+        var world = await TestDataSeeder.SeedBaselineAsync(context);
+        var service = NewService(context);
+
+        var source = await service.ReceiveAsync(PurchasedUbe(world, 50m, world.SupplierAId));
+        await context.SaveChangesAsync();
+
+        await service.TransferOutAsync([new LotDraw(source.LotId, 20m)], "Shipment", "SH-1");
+        await service.TransferInAsync(source.LotId, world.BranchManilaId, 20m, "Shipment", "SH-1");
+        await context.SaveChangesAsync();
+
+        await using var verify = CreateContext();
+        (await verify.Inventories.SingleAsync(
+                i => i.ItemId == world.UbeItemId && i.LocationId == world.MainWarehouseId))
+            .CurrentStock.Should().Be(30m, "debited at the source");
+
+        (await verify.Inventories.SingleAsync(
+                i => i.ItemId == world.UbeItemId && i.LocationId == world.BranchManilaId))
+            .CurrentStock.Should().Be(20m, "credited at the destination as a new cache row");
+    }
+
+    [Fact]
+    public async Task Disposal_decrements_the_cached_balance()
+    {
+        await using var context = CreateContext();
+        var world = await TestDataSeeder.SeedBaselineAsync(context);
+        var service = NewService(context);
+
+        var lot = await service.ReceiveAsync(PurchasedUbe(world, 10m, world.SupplierAId));
+        await context.SaveChangesAsync();
+
+        await service.DisposeAsync([new LotDraw(lot.LotId, 10m)], "Spoiled", "DisposalDocument", "WD-1");
+        await context.SaveChangesAsync();
+
+        await using var verify = CreateContext();
+        (await verify.Inventories.SingleAsync(
+                i => i.ItemId == world.UbeItemId && i.LocationId == world.MainWarehouseId))
+            .CurrentStock.Should().Be(0m);
+    }
+
+    [Fact]
+    public async Task The_cache_can_never_go_negative_at_the_database()
+    {
+        await using var context = CreateContext();
+        var world = await TestDataSeeder.SeedBaselineAsync(context);
+
+        context.Inventories.Add(new Domains.Entities.Inventory
+        {
+            ItemId = world.UbeItemId,
+            LocationId = world.MainWarehouseId,
+            CurrentStock = -1m
+        });
+
+        var act = async () => await context.SaveChangesAsync();
+        await act.Should().ThrowAsync<DbUpdateException>();
+    }
+
     [Fact]
     public async Task A_zero_quantity_movement_is_rejected_by_the_database()
     {

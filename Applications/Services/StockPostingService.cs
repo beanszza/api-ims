@@ -83,6 +83,9 @@ public sealed class StockPostingService : IStockPostingService
         AddLedgerEntry(lot, movementType, request.Quantity,
             request.ReferenceType, request.ReferenceId, request.Notes);
 
+        // A brand new lot has no "before": its available contribution starts at zero.
+        await AdjustInventoryCacheAsync(lot.ItemId, lot.LocationId, lot.AvailableQuantity);
+
         return lot;
     }
 
@@ -103,7 +106,10 @@ public sealed class StockPostingService : IStockPostingService
                     $"Lot {lot.LotCode} is {EnumDbValue.ToDbValue(lot.Status)} and cannot be consumed.");
             }
 
+            var before = lot.AvailableQuantity;
             Withdraw(lot, draw.Quantity);
+            await AdjustInventoryCacheAsync(lot.ItemId, lot.LocationId, lot.AvailableQuantity - before);
+
             AddLedgerEntry(lot, movementType, -draw.Quantity, referenceType, referenceId, notes);
         }
     }
@@ -121,7 +127,10 @@ public sealed class StockPostingService : IStockPostingService
                     $"Lot {lot.LotCode} is {EnumDbValue.ToDbValue(lot.Status)} and cannot be dispatched.");
             }
 
+            var before = lot.AvailableQuantity;
             Withdraw(lot, draw.Quantity);
+            await AdjustInventoryCacheAsync(lot.ItemId, lot.LocationId, lot.AvailableQuantity - before);
+
             AddLedgerEntry(lot, MovementType.TransferOut, -draw.Quantity, referenceType, referenceId);
         }
     }
@@ -160,6 +169,10 @@ public sealed class StockPostingService : IStockPostingService
         _context.InventoryLots.Add(arriving);
         AddLedgerEntry(arriving, MovementType.TransferIn, quantity, referenceType, referenceId);
 
+        // A brand new lot at the destination: its available contribution starts at zero, so the whole
+        // of AvailableQuantity is the delta (zero unless the arriving status is itself Available).
+        await AdjustInventoryCacheAsync(arriving.ItemId, arriving.LocationId, arriving.AvailableQuantity);
+
         return arriving;
     }
 
@@ -193,8 +206,10 @@ public sealed class StockPostingService : IStockPostingService
             lot.QuantityReceived = newQuantity;
         }
 
+        var before = lot.AvailableQuantity;
         lot.QuantityRemaining = newQuantity;
         SettleStatus(lot);
+        await AdjustInventoryCacheAsync(lot.ItemId, lot.LocationId, lot.AvailableQuantity - before);
 
         AddLedgerEntry(lot, MovementType.Adjustment, delta, "StockAdjustment", referenceId, reason);
     }
@@ -214,6 +229,7 @@ public sealed class StockPostingService : IStockPostingService
         foreach (var draw in draws)
         {
             var lot = await LoadLotAsync(draw.LotId);
+            var before = lot.AvailableQuantity;
 
             // Withdraw without the generic "fully drawn -> Consumed" side effect: disposal has its own
             // terminal status, and letting SettleStatus land the lot on Consumed first would make the
@@ -225,6 +241,8 @@ public sealed class StockPostingService : IStockPostingService
             {
                 TrySetStatus(lot, LotStatus.Disposed);
             }
+
+            await AdjustInventoryCacheAsync(lot.ItemId, lot.LocationId, lot.AvailableQuantity - before);
         }
     }
 
@@ -242,6 +260,7 @@ public sealed class StockPostingService : IStockPostingService
 
         var lot = await LoadLotAsync(original.LotId);
         var mirrored = -original.Quantity;
+        var before = lot.AvailableQuantity;
 
         if (mirrored < 0)
         {
@@ -256,6 +275,8 @@ public sealed class StockPostingService : IStockPostingService
             }
             SettleStatus(lot);
         }
+
+        await AdjustInventoryCacheAsync(lot.ItemId, lot.LocationId, lot.AvailableQuantity - before);
 
         var actor = _currentUser.Current;
 
@@ -290,6 +311,47 @@ public sealed class StockPostingService : IStockPostingService
     }
 
     // ---------- internals ----------
+
+    /// <summary>
+    /// Keeps <see cref="Inventory.CurrentStock"/> in step with the lots it summarises.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="Inventory"/> stopped being the source of truth in this task: <see cref="InventoryLot"/>
+    /// is. But the existing screens and reports still read <c>Inventory.CurrentStock</c>, and rewriting
+    /// every one of them to sum lots on every request was out of scope here. So the balance is kept as a
+    /// projection, nudged by exactly the change in <see cref="InventoryLot.AvailableQuantity"/> that each
+    /// posting call causes, rather than recomputed from scratch - recomputing under concurrent posting to
+    /// the same item/location would race the same way the pre-Task-5 code did.
+    /// <para>
+    /// A zero delta is a no-op on purpose: a lot arriving as <c>Quarantine</c> changes
+    /// <see cref="InventoryLot.QuantityRemaining"/> without changing <see cref="InventoryLot.AvailableQuantity"/>,
+    /// and the cache must not move until the stock is actually available.
+    /// </para>
+    /// </remarks>
+    private async Task AdjustInventoryCacheAsync(int itemId, int locationId, decimal delta)
+    {
+        if (delta == 0)
+        {
+            return;
+        }
+
+        // Checked against the change tracker before the database: two postings to the same item and
+        // location within one unsaved unit of work (for example two receipts from different suppliers
+        // landing in the same call) must share one row, not each race to insert their own and collide
+        // on the unique (ItemId, LocationId) index when SaveChanges runs.
+        var balance = _context.Inventories.Local
+            .FirstOrDefault(i => i.ItemId == itemId && i.LocationId == locationId)
+            ?? await _context.Inventories
+                .FirstOrDefaultAsync(i => i.ItemId == itemId && i.LocationId == locationId);
+
+        if (balance is null)
+        {
+            balance = new Inventory { ItemId = itemId, LocationId = locationId, CurrentStock = 0m };
+            _context.Inventories.Add(balance);
+        }
+
+        balance.CurrentStock += delta;
+    }
 
     private async Task<InventoryLot> LoadLotAsync(int lotId)
         => await _context.InventoryLots.FirstOrDefaultAsync(l => l.LotId == lotId)

@@ -282,6 +282,13 @@ public class ScmDbContext : DbContext
             .HasColumnType("xid")
             .ValueGeneratedOnAddOrUpdate()
             .IsConcurrencyToken();
+
+        // From Task 10, CurrentStock is a cached projection of SUM(InventoryLots.QuantityRemaining)
+        // WHERE Status = 'Available', maintained only by IStockPostingService. This constraint is the
+        // same defence the lot table already has on QuantityRemaining: the cache disagreeing with the
+        // ledger it summarises should fail loudly, not store a negative number nobody asked for.
+        modelBuilder.Entity<Inventory>().ToTable(t => t.HasCheckConstraint(
+            "CK_Inventories_CurrentStock_NotNegative", "\"CurrentStock\" >= 0"));
     }
 
     /// <summary>
