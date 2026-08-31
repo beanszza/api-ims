@@ -34,6 +34,24 @@ public sealed class DocumentNumberService : IDocumentNumberService
     }
 
     /// <summary>
+    /// Arbitrary-scope counter. Reuses the same row and the same atomic increment as document numbers,
+    /// with <c>Year = 0</c> marking the sequence as not year-scoped.
+    /// </summary>
+    public async Task<int> NextInScopeAsync(string scopeKey)
+    {
+        if (string.IsNullOrWhiteSpace(scopeKey))
+        {
+            throw new ArgumentException("A scope key is required.", nameof(scopeKey));
+        }
+
+        const int notYearScoped = 0;
+
+        return _context.Database.IsRelational()
+            ? await NextRelationalAsync(scopeKey, notYearScoped)
+            : await NextInMemoryAsync(scopeKey, notYearScoped);
+    }
+
+    /// <summary>
     /// Increments and reads the counter in one statement. Concurrent callers block on the conflicting
     /// row rather than both reading the same value.
     /// </summary>

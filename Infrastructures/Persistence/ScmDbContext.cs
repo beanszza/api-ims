@@ -29,6 +29,7 @@ public class ScmDbContext : DbContext
     public DbSet<BatchConsumption> BatchConsumptions { get; set; }
 
     // --- INVENTORY & LOGISTICS ---
+    public DbSet<InventoryLot> InventoryLots { get; set; }
     public DbSet<Location> Locations { get; set; }
     public DbSet<Driver> Drivers { get; set; }
     public DbSet<Inventory> Inventories { get; set; }
@@ -82,6 +83,81 @@ public class ScmDbContext : DbContext
         ConfigureQuantityPrecision(modelBuilder);
         ConfigureDocumentNumbering(modelBuilder);
         ConfigureStockIntegrity(modelBuilder);
+        ConfigureInventoryLots(modelBuilder);
+    }
+
+    /// <summary>
+    /// Configures the lot table: identity, traceability links, and the invariants stock must obey.
+    /// </summary>
+    /// <remarks>
+    /// The check constraints matter more than they look. They make it impossible for any code path -
+    /// including one written years from now by someone who has not read the posting service - to drive a
+    /// lot negative or hand out more than was received. Enforcing that in C# alone would mean trusting
+    /// every future caller.
+    /// </remarks>
+    private static void ConfigureInventoryLots(ModelBuilder modelBuilder)
+    {
+        var lot = modelBuilder.Entity<InventoryLot>();
+
+        lot.HasKey(l => l.LotId);
+
+        // A lot code is a business identifier people quote; duplicates would make a recall ambiguous.
+        lot.HasIndex(l => l.LotCode).IsUnique();
+
+        // The query the allocation engine runs constantly: available stock of an item at a location.
+        lot.HasIndex(l => new { l.ItemId, l.LocationId, l.Status })
+            .HasDatabaseName("IX_InventoryLots_ItemLocationStatus");
+
+        // Drives the expiry sweep and the FEFO ordering.
+        lot.HasIndex(l => l.ExpiryDate).HasDatabaseName("IX_InventoryLots_ExpiryDate");
+
+        // Backward tracing: every lot a supplier ever sent us.
+        lot.HasIndex(l => l.SupplierId).HasDatabaseName("IX_InventoryLots_SupplierId");
+
+        lot.Property(l => l.Status)
+            .HasConversion(EnumTextConverter<LotStatus>())
+            .HasColumnType("text");
+
+        lot.Property(l => l.SourceType)
+            .HasConversion(EnumTextConverter<LotSourceType>())
+            .HasColumnType("text");
+
+        lot.Property(l => l.QuantityReceived).HasPrecision(18, 3);
+        lot.Property(l => l.QuantityRemaining).HasPrecision(18, 3);
+
+        // Cost carries more scale than quantity: a per-gram cost of a bulk purchase is a small number.
+        lot.Property(l => l.UnitCost).HasPrecision(18, 6);
+
+        lot.HasOne(l => l.Item).WithMany().HasForeignKey(l => l.ItemId).OnDelete(DeleteBehavior.Restrict);
+        lot.HasOne(l => l.Location).WithMany().HasForeignKey(l => l.LocationId).OnDelete(DeleteBehavior.Restrict);
+        lot.HasOne(l => l.Uom).WithMany().HasForeignKey(l => l.UomId).OnDelete(DeleteBehavior.Restrict);
+
+        // Restrict, not Cascade: deleting a supplier must never delete the evidence of what they sent.
+        lot.HasOne(l => l.Supplier).WithMany().HasForeignKey(l => l.SupplierId).OnDelete(DeleteBehavior.Restrict);
+
+        lot.ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_InventoryLots_QuantityReceived_Positive",
+                "\"QuantityReceived\" > 0");
+
+            t.HasCheckConstraint("CK_InventoryLots_QuantityRemaining_NotNegative",
+                "\"QuantityRemaining\" >= 0");
+
+            t.HasCheckConstraint("CK_InventoryLots_QuantityRemaining_WithinReceived",
+                "\"QuantityRemaining\" <= \"QuantityReceived\"");
+
+            // A purchased lot without a supplier cannot be traced, which defeats the purpose.
+            t.HasCheckConstraint("CK_InventoryLots_PurchasedHasSupplier",
+                "\"SourceType\" <> 'Purchased' OR \"SupplierId\" IS NOT NULL");
+        });
+
+        // Same optimistic concurrency approach as Inventory: two simultaneous draws on one lot must not
+        // both succeed against the same starting quantity.
+        lot.Property<uint>("xmin")
+            .HasColumnName("xmin")
+            .HasColumnType("xid")
+            .ValueGeneratedOnAddOrUpdate()
+            .IsConcurrencyToken();
     }
 
     /// <summary>

@@ -151,6 +151,7 @@ builder.Services.AddScoped<IAuditTrail, AuditTrail>();
 
 // Resolves locations by role so posting never guesses at, or invents, a location.
 builder.Services.AddScoped<ILocationResolver, LocationResolver>();
+builder.Services.AddScoped<ILotCodeGenerator, LotCodeGenerator>();
 
 builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();

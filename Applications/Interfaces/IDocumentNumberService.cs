@@ -22,4 +22,18 @@ public interface IDocumentNumberService
     /// At this system's volume that is the right way round, because auditors ask about missing numbers.
     /// </remarks>
     Task<string> NextAsync(DocumentType documentType, DateTime? asOf = null);
+
+    /// <summary>
+    /// Reserves the next number within an arbitrary scope, for sequences that are not per-year.
+    /// </summary>
+    /// <param name="scopeKey">
+    /// Any stable string identifying the counter, for example <c>Lot:UBE:260619</c> for the lots of one
+    /// item on one day.
+    /// </param>
+    /// <remarks>
+    /// Shares the same atomic increment as <see cref="NextAsync"/>, so two concurrent callers can never
+    /// be handed the same number. Used for lot codes, where the sequence resets per item per day rather
+    /// than per year.
+    /// </remarks>
+    Task<int> NextInScopeAsync(string scopeKey);
 }
