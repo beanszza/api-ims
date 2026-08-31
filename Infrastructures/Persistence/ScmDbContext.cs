@@ -30,6 +30,7 @@ public class ScmDbContext : DbContext
 
     // --- INVENTORY & LOGISTICS ---
     public DbSet<InventoryLot> InventoryLots { get; set; }
+    public DbSet<StockLedger> StockLedgers { get; set; }
     public DbSet<Location> Locations { get; set; }
     public DbSet<Driver> Drivers { get; set; }
     public DbSet<Inventory> Inventories { get; set; }
@@ -84,6 +85,57 @@ public class ScmDbContext : DbContext
         ConfigureDocumentNumbering(modelBuilder);
         ConfigureStockIntegrity(modelBuilder);
         ConfigureInventoryLots(modelBuilder);
+        ConfigureStockLedger(modelBuilder);
+    }
+
+    /// <summary>
+    /// Configures the append-only stock ledger.
+    /// </summary>
+    private static void ConfigureStockLedger(ModelBuilder modelBuilder)
+    {
+        var ledger = modelBuilder.Entity<StockLedger>();
+
+        ledger.HasKey(l => l.LedgerId);
+
+        // The reconciliation query: every row for one lot.
+        ledger.HasIndex(l => l.LotId).HasDatabaseName("IX_StockLedgers_LotId");
+
+        // Movement history for an item at a location, newest first.
+        ledger.HasIndex(l => new { l.ItemId, l.LocationId, l.PostedAt })
+            .HasDatabaseName("IX_StockLedgers_ItemLocationPostedAt");
+
+        // "Show me everything this document did", used by the trace report.
+        ledger.HasIndex(l => new { l.ReferenceType, l.ReferenceId })
+            .HasDatabaseName("IX_StockLedgers_Reference");
+
+        ledger.Property(l => l.MovementType)
+            .HasConversion(EnumTextConverter<MovementType>())
+            .HasColumnType("text");
+
+        ledger.Property(l => l.Quantity).HasPrecision(18, 3);
+        ledger.Property(l => l.UnitCost).HasPrecision(18, 6);
+
+        // A movement of zero explains nothing and would let a caller pretend to post something. The old
+        // code wrote exactly such a row on transfer completion ("Transfer Completed (No Addition)").
+        ledger.ToTable(t => t.HasCheckConstraint(
+            "CK_StockLedgers_Quantity_NonZero", "\"Quantity\" <> 0"));
+
+        // Restrict everywhere: the ledger is evidence, and deleting a lot must not delete the record of
+        // what happened to it.
+        ledger.HasOne(l => l.Lot).WithMany().HasForeignKey(l => l.LotId).OnDelete(DeleteBehavior.Restrict);
+        ledger.HasOne(l => l.Item).WithMany().HasForeignKey(l => l.ItemId).OnDelete(DeleteBehavior.Restrict);
+        ledger.HasOne(l => l.Location).WithMany().HasForeignKey(l => l.LocationId).OnDelete(DeleteBehavior.Restrict);
+
+        ledger.HasOne(l => l.ReversalOf)
+            .WithMany()
+            .HasForeignKey(l => l.ReversalOfLedgerId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // One reversal per row: reversing the same movement twice would double the correction.
+        ledger.HasIndex(l => l.ReversalOfLedgerId)
+            .IsUnique()
+            .HasFilter("\"ReversalOfLedgerId\" IS NOT NULL")
+            .HasDatabaseName("IX_StockLedgers_ReversalOf");
     }
 
     /// <summary>
@@ -101,8 +153,14 @@ public class ScmDbContext : DbContext
 
         lot.HasKey(l => l.LotId);
 
-        // A lot code is a business identifier people quote; duplicates would make a recall ambiguous.
-        lot.HasIndex(l => l.LotCode).IsUnique();
+        // A lot code is a business identifier people quote, so it must be unique per location.
+        // It is NOT globally unique: a transfer deliberately creates a second InventoryLot row carrying
+        // the same code at the destination, because it is the same physical batch, just now split across
+        // two places. Uniqueness per (LotCode, LocationId) still catches an accidental duplicate receipt
+        // while allowing the one-batch-many-locations shape a transfer produces.
+        lot.HasIndex(l => new { l.LotCode, l.LocationId })
+            .IsUnique()
+            .HasDatabaseName("IX_InventoryLots_LotCode_LocationId");
 
         // The query the allocation engine runs constantly: available stock of an item at a location.
         lot.HasIndex(l => new { l.ItemId, l.LocationId, l.Status })

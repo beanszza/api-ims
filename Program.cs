@@ -153,6 +153,10 @@ builder.Services.AddScoped<IAuditTrail, AuditTrail>();
 builder.Services.AddScoped<ILocationResolver, LocationResolver>();
 builder.Services.AddScoped<ILotCodeGenerator, LotCodeGenerator>();
 
+// The only component permitted to change a lot's quantity. Every stock movement goes through it, so
+// every movement is written the same way, is always accompanied by a ledger row, and is always attributed.
+builder.Services.AddScoped<IStockPostingService, StockPostingService>();
+
 builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddScoped<IRecipeService, RecipeService>();

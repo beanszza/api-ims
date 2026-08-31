@@ -3,6 +3,7 @@ using System;
 using Infrastructures.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace api_scm.Migrations
 {
     [DbContext(typeof(ScmDbContext))]
-    partial class ScmDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260831191620_AddStockLedger")]
+    partial class AddStockLedger
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -322,14 +325,13 @@ namespace api_scm.Migrations
 
                     b.HasIndex("LocationId");
 
+                    b.HasIndex("LotCode")
+                        .IsUnique();
+
                     b.HasIndex("SupplierId")
                         .HasDatabaseName("IX_InventoryLots_SupplierId");
 
                     b.HasIndex("UomId");
-
-                    b.HasIndex("LotCode", "LocationId")
-                        .IsUnique()
-                        .HasDatabaseName("IX_InventoryLots_LotCode_LocationId");
 
                     b.HasIndex("ItemId", "LocationId", "Status")
                         .HasDatabaseName("IX_InventoryLots_ItemLocationStatus");
