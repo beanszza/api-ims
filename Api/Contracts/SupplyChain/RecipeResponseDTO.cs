@@ -16,5 +16,5 @@ public class RecipeIngredientResponse
     public int IngredientId { get; set; }
     public int ItemId { get; set; }
     public int UomId { get; set; }
-    public int StandardQuantity { get; set; }
+    public decimal StandardQuantity { get; set; }
 }

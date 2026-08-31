@@ -1,3 +1,5 @@
+using Domains.Enums;
+
 namespace Domains.Entities;
 
 public class StockTransfer
@@ -6,8 +8,8 @@ public class StockTransfer
     public int ProductId { get; set; }
     public int SourceLocationId { get; set; }
     public int DestLocationId { get; set; }
-    public int TransferQuantity { get; set; }
-    public string Status { get; set; } = string.Empty;
+    public decimal TransferQuantity { get; set; }
+    public ShipmentStatus Status { get; set; } = ShipmentStatus.Pending;
     public DateTime TransferDate { get; set; } = DateTime.UtcNow;
 
     public FinishedProduct? Product { get; set; }

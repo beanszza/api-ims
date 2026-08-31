@@ -16,11 +16,16 @@ public class LocationService : ILocationService
 {
     private readonly ScmDbContext _context;
     private readonly ILogger<LocationService> _logger;
+    private readonly IAuditTrail _audit;
 
-    public LocationService(ScmDbContext context, ILogger<LocationService> logger)
+    public LocationService(
+        ScmDbContext context,
+        ILogger<LocationService> logger,
+        IAuditTrail audit)
     {
         _context = context;
         _logger = logger;
+        _audit = audit;
     }
 
     public async Task<ApiResponse<PagedData<LocationResponse>>> GetAllLocationsAsync(int page = 1, int pageSize = 10)
@@ -59,7 +64,7 @@ public class LocationService : ILocationService
         }
     }
 
-    public async Task<ApiResponse<LocationResponse>> UpdateLocationAsync(int id, UpdateLocationRequest request, int userId)
+    public async Task<ApiResponse<LocationResponse>> UpdateLocationAsync(int id, UpdateLocationRequest request)
     {
         try
         {
@@ -73,53 +78,26 @@ public class LocationService : ILocationService
             if (location == null)
                 return ApiResponse<LocationResponse>.FailureResponse("Location not found.");
 
-            // Log changes to AuditLog
-            var timestamp = DateTime.UtcNow;
+            // Field-level audit entries, attributed to whoever is making the request.
+            var locationId = location.LocationId.ToString();
 
             if (location.LocationName != request.LocationName)
             {
-                _context.AuditLogs.Add(new AuditLog
-                {
-                    EntityName = "Location",
-                    EntityId = location.LocationId.ToString(),
-                    FieldName = "LocationName",
-                    OldValue = location.LocationName,
-                    NewValue = request.LocationName,
-                    Action = "Updated",
-                    Timestamp = timestamp,
-                    UserId = userId
-                });
+                _audit.Record(nameof(Location), locationId, "Updated",
+                    nameof(location.LocationName), location.LocationName, request.LocationName);
             }
 
             if (location.LocationType != request.LocationType)
             {
-                _context.AuditLogs.Add(new AuditLog
-                {
-                    EntityName = "Location",
-                    EntityId = location.LocationId.ToString(),
-                    FieldName = "LocationType",
-                    OldValue = location.LocationType,
-                    NewValue = request.LocationType,
-                    Action = "Updated",
-                    Timestamp = timestamp,
-                    UserId = userId
-                });
+                _audit.Record(nameof(Location), locationId, "Updated",
+                    nameof(location.LocationType), location.LocationType, request.LocationType);
             }
 
             var newStatus = string.IsNullOrWhiteSpace(request.Status) ? location.Status : request.Status;
             if (location.Status != newStatus)
             {
-                _context.AuditLogs.Add(new AuditLog
-                {
-                    EntityName = "Location",
-                    EntityId = location.LocationId.ToString(),
-                    FieldName = "Status",
-                    OldValue = location.Status ?? "Active",
-                    NewValue = newStatus,
-                    Action = "StatusUpdated",
-                    Timestamp = timestamp,
-                    UserId = userId
-                });
+                _audit.Record(nameof(Location), locationId, "StatusUpdated",
+                    nameof(location.Status), location.Status ?? "Active", newStatus);
             }
 
             location.LocationName = request.LocationName;
@@ -150,7 +128,7 @@ public class LocationService : ILocationService
         }
     }
 
-    public async Task<ApiResponse<LocationResponse>> CreateLocationAsync(CreateLocationRequest request, int userId)
+    public async Task<ApiResponse<LocationResponse>> CreateLocationAsync(CreateLocationRequest request)
     {
         try
         {
@@ -171,18 +149,8 @@ public class LocationService : ILocationService
             _context.Locations.Add(location);
             await _context.SaveChangesAsync();
 
-            var timestamp = DateTime.UtcNow;
-            _context.AuditLogs.Add(new AuditLog
-            {
-                EntityName = "Location",
-                EntityId = location.LocationId.ToString(),
-                FieldName = "LocationId",
-                OldValue = "null",
-                NewValue = location.LocationId.ToString(),
-                Action = "Created",
-                Timestamp = timestamp,
-                UserId = userId
-            });
+            _audit.Record(nameof(Location), location.LocationId.ToString(), "Created",
+                nameof(location.LocationName), null, location.LocationName);
             await _context.SaveChangesAsync();
 
             var response = new LocationResponse

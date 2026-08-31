@@ -11,7 +11,7 @@ public class StockTransferResponse
     public string SourceLocationName { get; set; } = string.Empty;
     public int DestLocationId { get; set; }
     public string DestLocationName { get; set; } = string.Empty;
-    public int TransferQuantity { get; set; }
+    public decimal TransferQuantity { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTime TransferDate { get; set; }
 }

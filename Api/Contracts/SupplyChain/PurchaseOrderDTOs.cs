@@ -15,7 +15,7 @@ namespace api_scm.Contracts.Requests
     public class CreatePurchaseOrderItemRequest
     {
         public int ItemId { get; set; }
-        public int PoItemQuantity { get; set; }
+        public decimal PoItemQuantity { get; set; }
     }
 
     public class UpdateOrderStatusRequest
@@ -36,6 +36,10 @@ namespace api_scm.Contracts.Responses
     public class PurchaseOrderResponse
     {
         public int PoId { get; set; }
+
+        /// <summary>Human-readable document number, for example PO-2026-0042.</summary>
+        public string PoNumber { get; set; } = string.Empty;
+
         public int SupplierId { get; set; }
         public string SupplierName { get; set; } = string.Empty;
         public DateTime OrderDate { get; set; }
@@ -58,8 +62,8 @@ namespace api_scm.Contracts.Responses
         public int PoItemId { get; set; }
         public int ItemId { get; set; }
         public string ItemName { get; set; } = string.Empty;
-        public int PoItemQuantity { get; set; }
-        public int ReceivedQuantity { get; set; }
+        public decimal PoItemQuantity { get; set; }
+        public decimal ReceivedQuantity { get; set; }
     }
 
     public class TransactionHistoryResponse
@@ -68,10 +72,16 @@ namespace api_scm.Contracts.Responses
         public int ItemId { get; set; }
         public string ItemName { get; set; } = string.Empty;
         public string LocationName { get; set; } = string.Empty;
-        public int ChangeQuantity { get; set; }
+        public decimal ChangeQuantity { get; set; }
         public string ActionType { get; set; } = string.Empty;
         public string ReferenceId { get; set; } = string.Empty;
-        public int UserId { get; set; }
+
+        /// <summary>Auth subject or system sentinel. A string because identity is owned by the auth service.</summary>
+        public string UserId { get; set; } = string.Empty;
+
+        /// <summary>Display name captured when the movement was posted.</summary>
+        public string UserName { get; set; } = string.Empty;
+
         public DateTime Timestamp { get; set; }
     }
 }

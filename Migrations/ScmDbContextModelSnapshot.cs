@@ -57,8 +57,13 @@ namespace api_scm.Migrations
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer");
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.HasKey("LogId");
 
@@ -79,8 +84,9 @@ namespace api_scm.Migrations
                     b.Property<int>("ItemId")
                         .HasColumnType("integer");
 
-                    b.Property<int>("RequiredQuantity")
-                        .HasColumnType("integer");
+                    b.Property<decimal>("RequiredQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
                     b.Property<int>("SourceSupplierId")
                         .HasColumnType("integer");
@@ -115,6 +121,32 @@ namespace api_scm.Migrations
                     b.HasKey("CategoryId");
 
                     b.ToTable("Categories");
+                });
+
+            modelBuilder.Entity("Domains.Entities.DocumentSequence", b =>
+                {
+                    b.Property<int>("DocumentSequenceId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("DocumentSequenceId"));
+
+                    b.Property<string>("DocType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("LastNumber")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("integer");
+
+                    b.HasKey("DocumentSequenceId");
+
+                    b.HasIndex("DocType", "Year")
+                        .IsUnique();
+
+                    b.ToTable("DocumentSequences");
                 });
 
             modelBuilder.Entity("Domains.Entities.Driver", b =>
@@ -175,8 +207,9 @@ namespace api_scm.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("InventoryId"));
 
-                    b.Property<int>("CurrentStock")
-                        .HasColumnType("integer");
+                    b.Property<decimal>("CurrentStock")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
                     b.Property<int?>("DriverId")
                         .HasColumnType("integer");
@@ -187,13 +220,20 @@ namespace api_scm.Migrations
                     b.Property<int>("LocationId")
                         .HasColumnType("integer");
 
+                    b.Property<uint>("xmin")
+                        .IsConcurrencyToken()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("xid")
+                        .HasColumnName("xmin");
+
                     b.HasKey("InventoryId");
 
                     b.HasIndex("DriverId");
 
-                    b.HasIndex("ItemId");
-
                     b.HasIndex("LocationId");
+
+                    b.HasIndex("ItemId", "LocationId")
+                        .IsUnique();
 
                     b.ToTable("Inventories");
                 });
@@ -210,8 +250,9 @@ namespace api_scm.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("ChangeQuantity")
-                        .HasColumnType("integer");
+                    b.Property<decimal>("ChangeQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
                     b.Property<int>("ItemId")
                         .HasColumnType("integer");
@@ -226,8 +267,13 @@ namespace api_scm.Migrations
                     b.Property<DateTime>("Timestamp")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("UserId")
-                        .HasColumnType("integer");
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("UserName")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.HasKey("MovementId");
 
@@ -256,10 +302,15 @@ namespace api_scm.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("MaxStockLevel")
-                        .HasColumnType("integer");
+                    b.Property<decimal>("MaxStockLevel")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
-                    b.Property<int>("MinStockLevel")
+                    b.Property<decimal>("MinStockLevel")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<int>("StockUomId")
                         .HasColumnType("integer");
 
                     b.Property<int>("UomId")
@@ -268,6 +319,8 @@ namespace api_scm.Migrations
                     b.HasKey("ItemId");
 
                     b.HasIndex("CategoryId");
+
+                    b.HasIndex("StockUomId");
 
                     b.HasIndex("UomId");
 
@@ -314,18 +367,21 @@ namespace api_scm.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("BatchId"));
 
-                    b.Property<int>("ActualQuantity")
-                        .HasColumnType("integer");
+                    b.Property<decimal>("ActualQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
                     b.Property<string>("AssignedCook")
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("BatchMultiplier")
-                        .HasColumnType("integer");
+                    b.Property<decimal>("BatchMultiplier")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
-                    b.Property<int>("EstimatedQuantity")
-                        .HasColumnType("integer");
+                    b.Property<decimal>("EstimatedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
                     b.Property<string>("ImageUrl")
                         .IsRequired()
@@ -390,6 +446,10 @@ namespace api_scm.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("PoNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("ProofImageUrl")
                         .IsRequired()
                         .HasColumnType("text");
@@ -415,6 +475,9 @@ namespace api_scm.Migrations
 
                     b.HasKey("PoId");
 
+                    b.HasIndex("PoNumber")
+                        .IsUnique();
+
                     b.HasIndex("SupplierId");
 
                     b.ToTable("PurchaseOrders");
@@ -434,14 +497,16 @@ namespace api_scm.Migrations
                     b.Property<int>("PoId")
                         .HasColumnType("integer");
 
-                    b.Property<int>("PoItemQuantity")
-                        .HasColumnType("integer");
+                    b.Property<decimal>("PoItemQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
                     b.Property<int?>("PurchaseOrderPoId")
                         .HasColumnType("integer");
 
-                    b.Property<int>("ReceivedQuantity")
-                        .HasColumnType("integer");
+                    b.Property<decimal>("ReceivedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
                     b.Property<int>("SupplierId")
                         .HasColumnType("integer");
@@ -503,8 +568,9 @@ namespace api_scm.Migrations
                     b.Property<int>("RecipeId")
                         .HasColumnType("integer");
 
-                    b.Property<int>("StandardQuantity")
-                        .HasColumnType("integer");
+                    b.Property<decimal>("StandardQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
                     b.Property<int>("UomId")
                         .HasColumnType("integer");
@@ -544,8 +610,9 @@ namespace api_scm.Migrations
                     b.Property<DateTime>("TransferDate")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<int>("TransferQuantity")
-                        .HasColumnType("integer");
+                    b.Property<decimal>("TransferQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
                     b.HasKey("TransferId");
 
@@ -609,11 +676,34 @@ namespace api_scm.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int?>("BaseUomId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("ConversionFactor")
+                        .HasPrecision(18, 9)
+                        .HasColumnType("numeric(18,9)");
+
+                    b.Property<bool>("IsBaseUnit")
+                        .HasColumnType("boolean");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("UomType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.HasKey("UomId");
+
+                    b.HasIndex("BaseUomId");
+
+                    b.HasIndex("Code")
+                        .IsUnique();
 
                     b.ToTable("UnitOfMeasures");
                 });
@@ -708,13 +798,21 @@ namespace api_scm.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Domains.Entities.UnitOfMeasure", "StockUom")
+                        .WithMany()
+                        .HasForeignKey("StockUomId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Domains.Entities.UnitOfMeasure", "Uom")
                         .WithMany("Items")
                         .HasForeignKey("UomId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Category");
+
+                    b.Navigation("StockUom");
 
                     b.Navigation("Uom");
                 });
@@ -837,6 +935,16 @@ namespace api_scm.Migrations
                     b.Navigation("Product");
 
                     b.Navigation("SourceLocation");
+                });
+
+            modelBuilder.Entity("Domains.Entities.UnitOfMeasure", b =>
+                {
+                    b.HasOne("Domains.Entities.UnitOfMeasure", "BaseUom")
+                        .WithMany()
+                        .HasForeignKey("BaseUomId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("BaseUom");
                 });
 
             modelBuilder.Entity("Domains.Entities.Category", b =>

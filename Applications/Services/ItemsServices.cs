@@ -16,25 +16,26 @@ public class ItemService : IItemService
 {
     private readonly ScmDbContext _context;
     private readonly ILogger<ItemService> _logger;
+    private readonly IAuditTrail _audit;
 
-    public ItemService(ScmDbContext context, ILogger<ItemService> logger)
+    public ItemService(ScmDbContext context, ILogger<ItemService> logger, IAuditTrail audit)
     {
         _context = context;
         _logger = logger;
+        _audit = audit;
     }
 
+    /// <summary>
+    /// Records an item change against the acting user.
+    /// </summary>
+    /// <remarks>
+    /// This used to hardcode <c>UserId = 1</c> and stuff the literal string "scmsuser" into the
+    /// FieldName column, so the audit trail asserted an identity that was never checked and misused a
+    /// column meant for the field that changed.
+    /// </remarks>
     private async Task LogActionAsync(string action, string itemName)
     {
-        var log = new AuditLog
-        {
-            EntityName = "supply",
-            EntityId = itemName,
-            Action = action,
-            Timestamp = DateTime.UtcNow,
-            UserId = 1,
-            FieldName = "scmsuser"
-        };
-        _context.AuditLogs.Add(log);
+        _audit.Record(nameof(Item), itemName, action);
         await _context.SaveChangesAsync();
     }
 
@@ -204,6 +205,10 @@ public class ItemService : IItemService
             {
                 ItemName = request.ItemName,
                 UomId = request.UomId,
+                // Stock is held in the unit the item was defined with. A separate purchasing unit
+                // (a 50 kg sack, say) arrives with the supplier catalogue in Task 12 and is
+                // converted into this unit on receipt.
+                StockUomId = request.UomId,
                 CategoryId = request.CategoryId,
                 MinStockLevel = request.MinStockLevel,
                 MaxStockLevel = request.MaxStockLevel,
@@ -279,7 +284,11 @@ public class ItemService : IItemService
                     _logger.LogWarning($"Invalid UOM ID: {request.UomId.Value}");
                     return ApiResponse<ItemResponse>.FailureResponse("Invalid UOM ID");
                 }
+                // Changing the unit an item is measured in changes what its balance means, so the
+                // stocking unit follows the display unit. Existing balances are NOT restated: that
+                // needs a deliberate conversion, which belongs with cycle counting in Task 44.
                 item.UomId = request.UomId.Value;
+                item.StockUomId = request.UomId.Value;
             }
 
             if (request.CategoryId.HasValue)

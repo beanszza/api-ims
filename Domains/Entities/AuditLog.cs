@@ -13,5 +13,10 @@ public class AuditLog
     public string NewValue { get; set; } = string.Empty;
     public string Action { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }
-    public int UserId { get; set; }
+
+    /// <summary>Auth service subject, or a <see cref="Domains.Identity.SystemUsers"/> sentinel.</summary>
+    public string UserId { get; set; } = Domains.Identity.SystemUsers.Unauthenticated;
+
+    /// <summary>Display name captured at the time of the action.</summary>
+    public string UserName { get; set; } = string.Empty;
 }

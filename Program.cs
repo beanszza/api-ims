@@ -1,5 +1,6 @@
 using Applications.Interfaces;
 using Applications.Services;
+using Infrastructures.Identity;
 using Infrastructures.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
@@ -132,6 +133,21 @@ builder.Services.AddDbContext<ScmDbContext>(options =>
 
 
 
+// Single authority on legal document status changes. Stateless, so a singleton is enough.
+builder.Services.AddSingleton<IStatusTransitionGuard, StatusTransitionGuard>();
+
+// Scoped: caches units per request and reads through the request's DbContext.
+builder.Services.AddScoped<IUomConversionService, UomConversionService>();
+builder.Services.AddScoped<IDocumentNumberService, DocumentNumberService>();
+builder.Services.AddScoped<IPostingTransaction, PostingTransaction>();
+
+// Attribution. HttpContextCurrentUserService reads the claims on the request; until an authentication
+// scheme populates HttpContext.User it resolves to CurrentUser.Anonymous, which is recorded honestly
+// rather than being disguised as a real person the way the old hardcoded user id was.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserService, HttpContextCurrentUserService>();
+builder.Services.AddScoped<IAuditTrail, AuditTrail>();
+
 builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddScoped<IRecipeService, RecipeService>();
@@ -239,37 +255,11 @@ if (app.Environment.IsDevelopment())
                 Console.WriteLine("✓ Categories seeded.");
             }
 
-            // Ensure all target Unit of Measures exist in the database
-            var existingUoms = db.UnitOfMeasures.ToList();
-            var targetUoms = new List<Domains.Entities.UnitOfMeasure>
-            {
-                new() { Name = "Kilogram", Abbreviation = "kg" },
-                new() { Name = "Piece", Abbreviation = "pcs" },
-                new() { Name = "Litre", Abbreviation = "L" },
-                new() { Name = "Meter", Abbreviation = "m" },
-                new() { Name = "Gram", Abbreviation = "g" },
-                new() { Name = "Box", Abbreviation = "box" },
-                new() { Name = "Pack", Abbreviation = "pack" },
-                new() { Name = "Roll", Abbreviation = "roll" },
-                new() { Name = "Bottle", Abbreviation = "bottle" }
-            };
-
-            bool uomAdded = false;
-            foreach (var uom in targetUoms)
-            {
-                if (!existingUoms.Any(u => u.Abbreviation.Equals(uom.Abbreviation, StringComparison.OrdinalIgnoreCase)))
-                {
-                    db.UnitOfMeasures.Add(uom);
-                    uomAdded = true;
-                }
-            }
-
-            if (uomAdded)
-            {
-                db.SaveChanges();
-                migrateLogger.LogInformation("✓ Unit of Measures seeded successfully.");
-                Console.WriteLine("✓ Unit of Measures seeded.");
-            }
+            // Ensure all target Unit of Measures exist, each with the dimension and factor that make
+            // conversion possible. Factors are "how many base units make one of this unit", where the
+            // bases are kg, L, pcs and m.
+            UnitOfMeasureSeeder.Seed(db, migrateLogger);
+            UnitOfMeasureSeeder.BackfillItemStockUom(db, migrateLogger);
 
             if (!db.Locations.Any(l => l.LocationName == "Branch 1 - Quezon City"))
             {
@@ -320,24 +310,10 @@ if (app.Environment.IsDevelopment())
                 db.SaveChanges();
             }
 
-            // Quick fix to merge duplicate inventories in Commissary
-            var duplicates = db.Inventories
-                .AsEnumerable()
-                .GroupBy(i => new { i.ItemId, i.LocationId })
-                .Where(g => g.Count() > 1)
-                .ToList();
-
-            foreach (var group in duplicates)
-            {
-                var keep = group.First();
-                var toRemove = group.Skip(1).ToList();
-                foreach (var dup in toRemove)
-                {
-                    keep.CurrentStock += dup.CurrentStock;
-                    db.Inventories.Remove(dup);
-                }
-            }
-            db.SaveChanges();
+            // The routine that used to merge duplicate inventory rows on every start has been removed.
+            // A unique index on Inventories (ItemId, LocationId) now makes duplicates impossible, and
+            // the existing ones were merged once by the migration that added it. Repairing the same
+            // data on every boot was treating the symptom.
 
             if (!db.AuditLogs.Any())
             {
@@ -352,7 +328,9 @@ if (app.Environment.IsDevelopment())
                         OldValue = "0",
                         NewValue = "50",
                         Timestamp = DateTime.UtcNow.AddHours(-18),
-                        UserId = 1
+                        // Seeded sample rows are the work of the seeder, not of a person.
+                        UserId = Domains.Identity.SystemUsers.Migration,
+                        UserName = "Database seeder"
                     },
                     new Domains.Entities.AuditLog
                     {
@@ -363,7 +341,9 @@ if (app.Environment.IsDevelopment())
                         OldValue = "20",
                         NewValue = "120",
                         Timestamp = DateTime.UtcNow.AddHours(-6),
-                        UserId = 1
+                        // Seeded sample rows are the work of the seeder, not of a person.
+                        UserId = Domains.Identity.SystemUsers.Migration,
+                        UserName = "Database seeder"
                     },
                     new Domains.Entities.AuditLog
                     {
@@ -374,7 +354,9 @@ if (app.Environment.IsDevelopment())
                         OldValue = "Draft",
                         NewValue = "Active",
                         Timestamp = DateTime.UtcNow.AddDays(-1),
-                        UserId = 1
+                        // Seeded sample rows are the work of the seeder, not of a person.
+                        UserId = Domains.Identity.SystemUsers.Migration,
+                        UserName = "Database seeder"
                     },
                     new Domains.Entities.AuditLog
                     {
@@ -385,7 +367,9 @@ if (app.Environment.IsDevelopment())
                         OldValue = "1.8kg flour",
                         NewValue = "2.0kg flour",
                         Timestamp = DateTime.UtcNow.AddHours(-10),
-                        UserId = 1
+                        // Seeded sample rows are the work of the seeder, not of a person.
+                        UserId = Domains.Identity.SystemUsers.Migration,
+                        UserName = "Database seeder"
                     },
                     new Domains.Entities.AuditLog
                     {
@@ -396,7 +380,9 @@ if (app.Environment.IsDevelopment())
                         OldValue = "Pending Inspection",
                         NewValue = "Grade A Approved",
                         Timestamp = DateTime.UtcNow.AddDays(-2),
-                        UserId = 1
+                        // Seeded sample rows are the work of the seeder, not of a person.
+                        UserId = Domains.Identity.SystemUsers.Migration,
+                        UserName = "Database seeder"
                     }
                 );
                 db.SaveChanges();

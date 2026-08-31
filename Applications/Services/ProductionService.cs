@@ -1,6 +1,7 @@
 using Api.Contracts.Production;
 using Applications.Interfaces;
 using Domains.Entities;
+using Domains.Enums;
 using Infrastructures.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.Http;
@@ -10,10 +11,20 @@ namespace Applications.Services;
 public class ProductionService : IProductionService
 {
     private readonly ScmDbContext _context;
+    private readonly IStatusTransitionGuard _statusGuard;
+    private readonly IUomConversionService _uomConversion;
+    private readonly IPostingTransaction _posting;
 
-    public ProductionService(ScmDbContext context)
+    public ProductionService(
+        ScmDbContext context,
+        IStatusTransitionGuard statusGuard,
+        IUomConversionService uomConversion,
+        IPostingTransaction posting)
     {
         _context = context;
+        _statusGuard = statusGuard;
+        _uomConversion = uomConversion;
+        _posting = posting;
     }
 
     public async Task<ProductionBatchResponse> CreateBatchAsync(CreateProductionBatchRequest request)
@@ -37,10 +48,10 @@ public class ProductionService : IProductionService
             ProductionDate = request.ScheduleDate,
             EstimatedQuantity = estimatedQuantity,
             ActualQuantity = 0,
-            Stage = "Preparation",
-            Status = "Scheduled",
+            Stage = ProductionStage.Preparation,
+            Status = BatchStatus.Scheduled,
             AssignedCook = request.AssignedCook,
-            QualityStatus = "Pending"
+            QualityStatus = QcStatus.Pending
         };
 
         _context.ProductionBatches.Add(batch);
@@ -70,26 +81,45 @@ public class ProductionService : IProductionService
 
         if (batch == null) throw new Exception("Batch not found.");
 
-        bool isStarting = batch.Status == "Scheduled" && request.Stage != "QA Review" && request.Stage != "Completed" && request.Stage != "Cancelled";
+        if (!EnumDbValue.TryParse<ProductionStage>(request.Stage, out var requestedStage)
+            || requestedStage == ProductionStage.Unspecified)
+        {
+            throw new Exception(
+                $"Invalid stage '{request.Stage}'. Accepted values: {EnumDbValue.DescribeAccepted<ProductionStage>()}.");
+        }
 
-        batch.Stage = request.Stage;
+        // The QA checkpoint is spelled two different ways by two different screens
+        // ("Quality Control" on the production board, "QA Review" in the upload modal). Treat both
+        // as the same checkpoint until Task 29 unifies the vocabulary.
+        var isQaCheckpoint = requestedStage is ProductionStage.QaReview or ProductionStage.QualityControl;
+
+        bool isStarting = batch.Status == BatchStatus.Scheduled
+            && !isQaCheckpoint
+            && requestedStage != ProductionStage.Completed
+            && requestedStage != ProductionStage.Cancelled;
+
+        batch.Stage = requestedStage;
         if (request.ActualQuantity.HasValue && request.ActualQuantity.Value > 0)
         {
             batch.ActualQuantity = request.ActualQuantity.Value;
         }
-        if (request.Stage == "Completed")
-        {
-            batch.Status = "Completed";
-        }
-        else if (request.Stage == "Cancelled")
-        {
-            batch.Status = "Cancelled";
-        }
-        else if (request.Stage != "QA Review")
-        {
-            batch.Status = "In Progress";
-        }
 
+        var targetStatus = requestedStage switch
+        {
+            ProductionStage.Completed => BatchStatus.Completed,
+            ProductionStage.Cancelled => BatchStatus.Cancelled,
+            _ when isQaCheckpoint => batch.Status, // reaching QA does not itself change the status
+            _ => BatchStatus.InProgress
+        };
+
+        _statusGuard.EnsureCanTransition(batch.Status, targetStatus);
+        batch.Status = targetStatus;
+
+        // Starting a batch deducts every ingredient. Either the whole set of deductions and the stage
+        // change land, or none of them do: a shortage discovered on the fifth ingredient must not leave
+        // the first four already taken out of stock.
+        await _posting.ExecuteAsync(async () =>
+        {
         if (isStarting)
         {
             // Deduct inventory
@@ -101,18 +131,24 @@ public class ProductionService : IProductionService
             {
                 foreach (var ingredient in recipe.RecipeIngredients)
                 {
-                    var requiredQuantity = ingredient.StandardQuantity * batch.BatchMultiplier;
+                    // The recipe states its quantity in its own unit, which need not be the unit the
+                    // item is stocked in. Convert before touching a balance: an ingredient written as
+                    // 10 000 g must take 10 kg off a kilogram balance, not 10 000.
+                    var recipeQuantity = ingredient.StandardQuantity * batch.BatchMultiplier;
+                    var requiredQuantity = await _uomConversion.ConvertToItemStockUomAsync(
+                        recipeQuantity, ingredient.UomId, ingredient.ItemId);
+
                     var inventories = await _context.Inventories
                         .Where(i => i.ItemId == ingredient.ItemId && i.CurrentStock > 0)
                         .OrderBy(i => i.LocationId)
                         .ToListAsync();
 
-                    int remainingToDeduct = requiredQuantity;
+                    decimal remainingToDeduct = requiredQuantity;
                     foreach (var inv in inventories)
                     {
                         if (remainingToDeduct <= 0) break;
 
-                        int deductAmount = Math.Min(inv.CurrentStock, remainingToDeduct);
+                        decimal deductAmount = Math.Min(inv.CurrentStock, remainingToDeduct);
                         inv.CurrentStock -= deductAmount;
                         remainingToDeduct -= deductAmount;
 
@@ -129,14 +165,19 @@ public class ProductionService : IProductionService
 
                     if (remainingToDeduct > 0)
                     {
-                        var item = await _context.Items.FindAsync(ingredient.ItemId);
-                        throw new Exception($"Insufficient stock for ingredient {item?.ItemName ?? ingredient.ItemId.ToString()}. Required: {requiredQuantity}, Short by: {remainingToDeduct}");
+                        var item = await _context.Items
+                            .Include(i => i.StockUom)
+                            .FirstOrDefaultAsync(i => i.ItemId == ingredient.ItemId);
+                        var unit = item?.StockUom?.Abbreviation ?? string.Empty;
+                        throw new Exception(
+                            $"Insufficient stock for ingredient {item?.ItemName ?? ingredient.ItemId.ToString()}. " +
+                            $"Required: {requiredQuantity}{unit}, Short by: {remainingToDeduct}{unit}");
                     }
                 }
             }
         }
+        });
 
-        await _context.SaveChangesAsync();
         return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Recipe?.Product?.Item?.ItemName ?? "");
     }
 
@@ -166,16 +207,21 @@ public class ProductionService : IProductionService
 
         if (batch == null) throw new Exception("Batch not found.");
 
+        var qaVerdict = request.IsApproved ? QcStatus.Approved : QcStatus.Rejected;
+        var batchOutcome = request.IsApproved ? BatchStatus.PassedQa : BatchStatus.Rejected;
+
+        _statusGuard.EnsureCanTransition(batch.QualityStatus, qaVerdict);
+        _statusGuard.EnsureCanTransition(batch.Status, batchOutcome);
+
+        batch.QualityStatus = qaVerdict;
+        batch.Status = batchOutcome;
+
         if (request.IsApproved)
         {
-            batch.QualityStatus = "Approved";
-            batch.Status = "Passed QA";
-            batch.Stage = "Packaging";
+            batch.Stage = ProductionStage.Packaging;
         }
         else
         {
-            batch.QualityStatus = "Rejected";
-            batch.Status = "Rejected";
             batch.RejectionReason = request.RejectionReason;
         }
 
@@ -192,10 +238,17 @@ public class ProductionService : IProductionService
             .FirstOrDefaultAsync(b => b.BatchId == batchId);
 
         if (batch == null) throw new Exception("Batch not found.");
-        if (batch.Status == "Inventory Added") throw new Exception("Batch already added to inventory.");
+        if (batch.Status == BatchStatus.InventoryAdded) throw new Exception("Batch already added to inventory.");
 
+        _statusGuard.EnsureCanTransition(batch.Status, BatchStatus.InventoryAdded);
+
+        // Posting finished goods touches locations, categories, master data, a balance and the ledger.
+        // Previously each of those was saved separately, so a failure part way through could leave the
+        // stock added but the batch still unposted, or the reverse.
+        await _posting.ExecuteAsync(async () =>
+        {
         // Determine actual quantity produced - assuming estimated for now if not set
-        int actualQty = batch.ActualQuantity > 0 ? batch.ActualQuantity : batch.EstimatedQuantity;
+        decimal actualQty = batch.ActualQuantity > 0 ? batch.ActualQuantity : batch.EstimatedQuantity;
 
         // Add finished goods to inventory. Fetch or create the "Finished Goods" location.
         var finishedGoodsLocation = await _context.Locations
@@ -277,9 +330,9 @@ public class ProductionService : IProductionService
             Timestamp = DateTime.UtcNow
         });
 
-        batch.Status = "Inventory Added";
+        batch.Status = BatchStatus.InventoryAdded;
+        });
 
-        await _context.SaveChangesAsync();
         return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Recipe?.Product?.Item?.ItemName ?? "");
     }
 
@@ -310,10 +363,16 @@ public class ProductionService : IProductionService
 
     public async Task<DashboardSummaryResponse> GetDashboardSummaryAsync()
     {
-        var active = await _context.ProductionBatches.CountAsync(b => b.Status == "In Progress" || b.Status == "Scheduled");
-        var delayed = await _context.ProductionBatches.CountAsync(b => b.ProductionDate < DateTime.UtcNow && b.Status != "Completed" && b.Status != "Rejected" && b.Status != "Inventory Added");
-        var passedQa = await _context.ProductionBatches.CountAsync(b => b.Status == "Passed QA");
-        var completed = await _context.ProductionBatches.CountAsync(b => b.Status == "Completed" || b.Status == "Inventory Added");
+        var active = await _context.ProductionBatches.CountAsync(b =>
+            b.Status == BatchStatus.InProgress || b.Status == BatchStatus.Scheduled);
+        var delayed = await _context.ProductionBatches.CountAsync(b =>
+            b.ProductionDate < DateTime.UtcNow
+            && b.Status != BatchStatus.Completed
+            && b.Status != BatchStatus.Rejected
+            && b.Status != BatchStatus.InventoryAdded);
+        var passedQa = await _context.ProductionBatches.CountAsync(b => b.Status == BatchStatus.PassedQa);
+        var completed = await _context.ProductionBatches.CountAsync(b =>
+            b.Status == BatchStatus.Completed || b.Status == BatchStatus.InventoryAdded);
 
         return new DashboardSummaryResponse
         {
@@ -367,10 +426,10 @@ public class ProductionService : IProductionService
             EstimatedQuantity = batch.EstimatedQuantity,
             ActualQuantity = batch.ActualQuantity,
             ProductionDate = batch.ProductionDate,
-            Stage = batch.Stage,
-            Status = batch.Status,
+            Stage = EnumDbValue.ToDbValue(batch.Stage),
+            Status = EnumDbValue.ToDbValue(batch.Status),
             AssignedCook = batch.AssignedCook,
-            QualityStatus = batch.QualityStatus,
+            QualityStatus = EnumDbValue.ToDbValue(batch.QualityStatus),
             RejectionReason = batch.RejectionReason,
             ImageUrl = batch.ImageUrl,
             Notes = batch.Notes

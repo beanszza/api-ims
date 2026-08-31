@@ -9,8 +9,8 @@ public class InventoryResponse
     public string UomName { get; set; } = string.Empty;
     public int LocationId { get; set; }
     public string LocationName { get; set; } = string.Empty;
-    public int CurrentStock { get; set; }
-    public int MinStockLevel { get; set; }
-    public int MaxStockLevel { get; set; }
+    public decimal CurrentStock { get; set; }
+    public decimal MinStockLevel { get; set; }
+    public decimal MaxStockLevel { get; set; }
     public bool IsLowStock => CurrentStock <= MinStockLevel;
 }

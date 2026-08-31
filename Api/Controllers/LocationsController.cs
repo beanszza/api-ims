@@ -28,16 +28,14 @@ public class LocationsController : ControllerBase
     [HttpPut("{id}")]
     public async Task<ActionResult<ApiResponse<LocationResponse>>> UpdateLocation([FromRoute] int id, [FromBody] UpdateLocationRequest request)
     {
-        // For testing/mocking, assuming UserId = 1
-        var result = await _locationService.UpdateLocationAsync(id, request, userId: 1);
+        var result = await _locationService.UpdateLocationAsync(id, request);
         return result.Success ? Ok(result) : StatusCode(400, result);
     }
 
     [HttpPost]
     public async Task<ActionResult<ApiResponse<LocationResponse>>> CreateLocation([FromBody] CreateLocationRequest request)
     {
-        // For testing/mocking, assuming UserId = 1
-        var result = await _locationService.CreateLocationAsync(request, userId: 1);
+        var result = await _locationService.CreateLocationAsync(request);
         return result.Success ? Ok(result) : StatusCode(400, result);
     }
 }

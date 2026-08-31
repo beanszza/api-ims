@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Domains.Enums;
 using Infrastructures.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -147,7 +148,10 @@ public class AuditLogsController : ControllerBase
                 .Include(p => p.Supplier)
                 .Include(p => p.PurchaseOrderItems)
                     .ThenInclude(poi => poi.Item)
-                .Where(p => p.Status == "Received" || p.Status == "Completed" || p.Status == "Arrived")
+                // The original filter also tested for "Received", which was never a status this
+                // system writes, so that clause never matched anything. Task 14 introduces a real
+                // Received state when receiving becomes its own posted document.
+                .Where(p => p.Status == PurchaseOrderStatus.Completed || p.Status == PurchaseOrderStatus.Arrived)
                 .ToListAsync();
 
             foreach (var po in pos)
@@ -180,7 +184,8 @@ public class AuditLogsController : ControllerBase
                 {
                     foreach (var ri in b.Recipe.RecipeIngredients)
                     {
-                        var deductedQty = Math.Round(ri.StandardQuantity * Math.Max(1.0, (double)batchQty / Math.Max(1, b.Recipe.OutputQuantity)), 2);
+                        var deductedQty = Math.Round(
+                            ri.StandardQuantity * Math.Max(1m, batchQty / Math.Max(1, b.Recipe.OutputQuantity)), 2);
                         logResults.Add(new
                         {
                             id = $"INV-DED-BAT{b.BatchId:D4}",

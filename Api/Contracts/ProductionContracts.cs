@@ -4,7 +4,10 @@ public class CreateProductionBatchRequest
 {
     public int RecipeId { get; set; }
     public int ProductId { get; set; }
-    public int BatchMultiplier { get; set; }
+
+    /// <summary>How many standard recipe batches to cook. Decimal so a half batch is allowed.</summary>
+    public decimal BatchMultiplier { get; set; }
+
     public DateTime ScheduleDate { get; set; }
     public string AssignedCook { get; set; } = string.Empty;
 }
@@ -16,9 +19,9 @@ public class ProductionBatchResponse
     public string RecipeName { get; set; } = string.Empty;
     public int ProductId { get; set; }
     public string ProductName { get; set; } = string.Empty;
-    public int BatchMultiplier { get; set; }
-    public int EstimatedQuantity { get; set; }
-    public int ActualQuantity { get; set; }
+    public decimal BatchMultiplier { get; set; }
+    public decimal EstimatedQuantity { get; set; }
+    public decimal ActualQuantity { get; set; }
     public DateTime ProductionDate { get; set; }
     public string Stage { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
@@ -32,7 +35,7 @@ public class ProductionBatchResponse
 public class UpdateStageRequest
 {
     public string Stage { get; set; } = string.Empty;
-    public int? ActualQuantity { get; set; }
+    public decimal? ActualQuantity { get; set; }
 }
 
 public class UpdateQaNotesRequest
@@ -59,6 +62,6 @@ public class LowStockAlertResponse
 {
     public int ItemId { get; set; }
     public string ItemName { get; set; } = string.Empty;
-    public int CurrentStock { get; set; }
-    public int MinStockLevel { get; set; }
+    public decimal CurrentStock { get; set; }
+    public decimal MinStockLevel { get; set; }
 }

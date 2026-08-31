@@ -28,24 +28,21 @@ public class StockTransfersController : ControllerBase
     [HttpPost]
     public async Task<ActionResult<ApiResponse<StockTransferResponse>>> CreateTransfer([FromBody] CreateStockTransferRequest request)
     {
-        // For testing/mocking, assuming UserId = 1
-        var result = await _stockTransferService.CreateTransferAsync(request, userId: 1);
+        var result = await _stockTransferService.CreateTransferAsync(request);
         return result.Success ? Ok(result) : StatusCode(400, result);
     }
 
     [HttpPut("{id}")]
     public async Task<ActionResult<ApiResponse<StockTransferResponse>>> UpdateTransfer([FromRoute] int id, [FromBody] UpdateStockTransferRequest request)
     {
-        // For testing/mocking, assuming UserId = 1
-        var result = await _stockTransferService.UpdateTransferAsync(id, request, userId: 1);
+        var result = await _stockTransferService.UpdateTransferAsync(id, request);
         return result.Success ? Ok(result) : StatusCode(400, result);
     }
 
     [HttpPut("{id}/status")]
     public async Task<ActionResult<ApiResponse<StockTransferResponse>>> UpdateTransferStatus([FromRoute] int id, [FromBody] UpdateStockTransferStatusRequest request)
     {
-        // For testing/mocking, assuming UserId = 1
-        var result = await _stockTransferService.UpdateTransferStatusAsync(id, request, userId: 1);
+        var result = await _stockTransferService.UpdateTransferStatusAsync(id, request);
         return result.Success ? Ok(result) : StatusCode(400, result);
     }
 

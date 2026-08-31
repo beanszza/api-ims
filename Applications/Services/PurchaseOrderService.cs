@@ -8,6 +8,8 @@ using api_scm.Contracts.Requests;
 using api_scm.Contracts.Responses;
 using Applications.Interfaces;
 using Domains.Entities;
+using Domains.Enums;
+using Domains.Exceptions;
 using Infrastructures.Persistence;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
@@ -19,11 +21,28 @@ public class PurchaseOrderService : IPurchaseOrderService
 {
     private readonly ScmDbContext _context;
     private readonly ILogger<PurchaseOrderService> _logger;
+    private readonly IStatusTransitionGuard _statusGuard;
+    private readonly IDocumentNumberService _documentNumbers;
+    private readonly IPostingTransaction _posting;
+    private readonly ICurrentUserService _currentUser;
+    private readonly IAuditTrail _audit;
 
-    public PurchaseOrderService(ScmDbContext context, ILogger<PurchaseOrderService> logger)
+    public PurchaseOrderService(
+        ScmDbContext context,
+        ILogger<PurchaseOrderService> logger,
+        IStatusTransitionGuard statusGuard,
+        IDocumentNumberService documentNumbers,
+        IPostingTransaction posting,
+        ICurrentUserService currentUser,
+        IAuditTrail audit)
     {
         _context = context;
         _logger = logger;
+        _statusGuard = statusGuard;
+        _documentNumbers = documentNumbers;
+        _posting = posting;
+        _currentUser = currentUser;
+        _audit = audit;
     }
 
     public async Task<ApiResponse<PurchaseOrderResponse>> CreatePurchaseOrderAsync(CreatePurchaseOrderRequest request)
@@ -74,20 +93,28 @@ public class PurchaseOrderService : IPurchaseOrderService
                 });
             }
 
-            var order = new PurchaseOrder
-            {
-                SupplierId = request.SupplierId,
-                OrderDate = DateTime.UtcNow,
-                ExpectedArrivalDate = request.ExpectedArrivalDate,
-                Status = "Pending",
-                PaymentType = request.PaymentType,
-                ProofImageUrl = string.Empty,
-                TotalAmount = request.TotalAmount,
-                PurchaseOrderItems = poItems
-            };
+            var orderDate = DateTime.UtcNow;
 
-            _context.PurchaseOrders.Add(order);
-            await _context.SaveChangesAsync();
+            // Number and insert together, so a failed insert releases the number instead of leaving a
+            // hole in the sequence.
+            var order = await _posting.ExecuteAsync(async () =>
+            {
+                var newOrder = new PurchaseOrder
+                {
+                    PoNumber = await _documentNumbers.NextAsync(DocumentType.PurchaseOrder, orderDate),
+                    SupplierId = request.SupplierId,
+                    OrderDate = orderDate,
+                    ExpectedArrivalDate = request.ExpectedArrivalDate,
+                    Status = PurchaseOrderStatus.Pending,
+                    PaymentType = request.PaymentType,
+                    ProofImageUrl = string.Empty,
+                    TotalAmount = request.TotalAmount,
+                    PurchaseOrderItems = poItems
+                };
+
+                _context.PurchaseOrders.Add(newOrder);
+                return newOrder;
+            });
 
             // Reload relationships to return details
             var reloadedOrder = await _context.PurchaseOrders
@@ -119,9 +146,15 @@ public class PurchaseOrderService : IPurchaseOrderService
                 .ThenInclude(poi => poi.Item)
                 .AsQueryable();
 
-            if (!string.IsNullOrWhiteSpace(status))
+            if (!string.IsNullOrWhiteSpace(status) && !status.Equals("All", StringComparison.OrdinalIgnoreCase))
             {
-                query = query.Where(o => o.Status.ToLower() == status.ToLower());
+                if (!EnumDbValue.TryParse<PurchaseOrderStatus>(status, out var statusFilter))
+                {
+                    return ApiResponse<PagedData<PurchaseOrderResponse>>.FailureResponse(
+                        $"Invalid status filter '{status}'. Accepted values: {EnumDbValue.DescribeAccepted<PurchaseOrderStatus>()}.");
+                }
+
+                query = query.Where(o => o.Status == statusFilter);
             }
 
             if (!string.IsNullOrWhiteSpace(search))
@@ -165,12 +198,11 @@ public class PurchaseOrderService : IPurchaseOrderService
         {
             _logger.LogInformation("Updating purchase order ID {PoId} status to {Status}", id, request.Status);
 
-            var allowedStatuses = new[] { "Pending", "Arrived", "Completed", "Cancelled", "Rejected" };
-            var matchedStatus = allowedStatuses.FirstOrDefault(s => s.Equals(request.Status, StringComparison.OrdinalIgnoreCase));
-
-            if (matchedStatus == null)
+            if (!EnumDbValue.TryParse<PurchaseOrderStatus>(request.Status, out var requestedStatus)
+                || requestedStatus == PurchaseOrderStatus.Unspecified)
             {
-                return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Invalid status: {request.Status}. Allowed statuses are: Pending, Arrived, Completed, Cancelled, Rejected.");
+                return ApiResponse<PurchaseOrderResponse>.FailureResponse(
+                    $"Invalid status: {request.Status}. Allowed statuses are: {EnumDbValue.DescribeAccepted<PurchaseOrderStatus>()}.");
             }
 
             var order = await _context.PurchaseOrders
@@ -185,23 +217,37 @@ public class PurchaseOrderService : IPurchaseOrderService
             }
 
             var oldStatus = order.Status;
-            order.Status = matchedStatus;
+            var actor = _currentUser.Current;
+
+            // The lifecycle is Pending -> Arrived -> Completed, because QA inspection happens on
+            // arrival. Jumping straight from Pending to Completed would post stock that nobody
+            // inspected, so the guard refuses it.
+            _statusGuard.EnsureCanTransition(oldStatus, requestedStatus);
+
+            order.Status = requestedStatus;
 
             // Handle QA specific fields if it's a QA transition
-            if (matchedStatus == "Completed" || matchedStatus == "Rejected")
+            if (requestedStatus is PurchaseOrderStatus.Completed or PurchaseOrderStatus.Rejected)
             {
                 if (!string.IsNullOrEmpty(request.QaNotes) || !string.IsNullOrEmpty(request.QaStatus))
                 {
                     order.QaNotes = request.QaNotes;
                     order.QaStatus = request.QaStatus;
                     order.QaInspectedDate = DateTime.UtcNow;
-                    order.InspectedBy = request.InspectedBy ?? "Admin"; // Fallback to Admin if not provided
+                    // Fall back to the acting user rather than the literal "Admin", so an unattributed
+                    // inspection is visible as such instead of being credited to an administrator.
+                    order.InspectedBy = request.InspectedBy ?? actor.AuditName;
                 }
             }
 
             // Trigger stock additions & transaction logging ONLY on "Completed" (passed QA)
-            var isCompletedTransition = (matchedStatus == "Completed") && oldStatus != "Completed";
+            var isCompletedTransition = requestedStatus == PurchaseOrderStatus.Completed
+                && oldStatus != PurchaseOrderStatus.Completed;
 
+            // Everything from here on is one posting: the status change, the received quantities, the
+            // balances and the ledger entries either all land or none do.
+            await _posting.ExecuteAsync(async () =>
+            {
             if (isCompletedTransition)
             {
                 // Retrieve default Location and Driver as fallback
@@ -253,20 +299,34 @@ public class PurchaseOrderService : IPurchaseOrderService
                         LocationId = location.LocationId,
                         ChangeQuantity = poItem.PoItemQuantity,
                         ActionType = "Order Arrival",
-                        ReferenceId = order.PoId.ToString(),
-                        UserId = 1,
+                        ReferenceId = order.PoNumber,
+                        UserId = actor.UserId,
+                        UserName = actor.AuditName,
                         Timestamp = DateTime.UtcNow
                     };
                     _context.InventoryMovementLogs.Add(movementLog);
                 }
             }
 
-            _context.PurchaseOrders.Update(order);
-            await _context.SaveChangesAsync();
+                _context.PurchaseOrders.Update(order);
+
+                _audit.Record(
+                    nameof(PurchaseOrder), order.PoNumber, "StatusUpdated",
+                    fieldName: nameof(order.Status),
+                    oldValue: EnumDbValue.ToDbValue(oldStatus),
+                    newValue: EnumDbValue.ToDbValue(requestedStatus));
+            });
 
             var response = MapToResponse(order);
             _logger.LogInformation("Purchase order ID {PoId} updated successfully", id);
             return ApiResponse<PurchaseOrderResponse>.SuccessResponse(response, "Status updated successfully");
+        }
+        catch (InvalidStatusTransitionException ex)
+        {
+            // A rejected lifecycle jump is a caller mistake, not a server fault: surface the
+            // explanation verbatim rather than burying it in "An error occurred".
+            _logger.LogWarning("Rejected status transition on purchase order {PoId}: {Message}", id, ex.Message);
+            return ApiResponse<PurchaseOrderResponse>.FailureResponse(ex.Message);
         }
         catch (Exception ex)
         {
@@ -506,8 +566,9 @@ public class PurchaseOrderService : IPurchaseOrderService
             SupplierId = order.SupplierId,
             SupplierName = order.Supplier?.CompanyName ?? string.Empty,
             OrderDate = order.OrderDate,
+            PoNumber = order.PoNumber,
             ExpectedArrivalDate = order.ExpectedArrivalDate,
-            Status = order.Status,
+            Status = EnumDbValue.ToDbValue(order.Status),
             PaymentType = order.PaymentType,
             ProofImageUrl = order.ProofImageUrl,
             TotalAmount = order.TotalAmount,

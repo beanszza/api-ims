@@ -15,11 +15,49 @@ public class RecipeService : IRecipeService
 {
     private readonly ScmDbContext _context;
     private readonly ILogger<RecipeService> _logger;
+    private readonly IUomConversionService _uomConversion;
 
-    public RecipeService(ScmDbContext context, ILogger<RecipeService> logger)
+    public RecipeService(
+        ScmDbContext context,
+        ILogger<RecipeService> logger,
+        IUomConversionService uomConversion)
     {
         _context = context;
         _logger = logger;
+        _uomConversion = uomConversion;
+    }
+
+    /// <summary>
+    /// Returns an explanation if an ingredient's unit cannot be converted into the unit its item is
+    /// stocked in, otherwise null.
+    /// </summary>
+    /// <remarks>
+    /// Rejecting this at save time is the point: a recipe measuring ube in litres cannot be costed,
+    /// planned, or consumed, and catching it here means production never has to guess.
+    /// </remarks>
+    private async Task<string?> DescribeUnitMismatchAsync(int itemId, int uomId)
+    {
+        var item = await _context.Items
+            .AsNoTracking()
+            .Include(i => i.StockUom)
+            .FirstOrDefaultAsync(i => i.ItemId == itemId);
+
+        if (item is null)
+        {
+            return $"Item with ID {itemId} not found.";
+        }
+
+        if (await _uomConversion.CanConvertAsync(uomId, item.StockUomId))
+        {
+            return null;
+        }
+
+        var ingredientUom = await _context.UnitOfMeasures.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.UomId == uomId);
+
+        return $"'{item.ItemName}' is stocked in {item.StockUom?.Abbreviation ?? "an unknown unit"}, " +
+               $"which cannot be converted from {ingredientUom?.Abbreviation ?? $"unit {uomId}"}. " +
+               "Choose a unit that measures the same thing.";
     }
 
     public async Task<ApiResponse<IEnumerable<RecipeResponse>>> GetAllRecipesAsync()
@@ -87,6 +125,12 @@ public class RecipeService : IRecipeService
                 if (ing.StandardQuantity <= 0)
                 {
                     return ApiResponse<RecipeResponse>.FailureResponse("Ingredient quantities must be greater than zero.");
+                }
+
+                var unitProblem = await DescribeUnitMismatchAsync(ing.ItemId, ing.UomId);
+                if (unitProblem is not null)
+                {
+                    return ApiResponse<RecipeResponse>.FailureResponse(unitProblem);
                 }
             }
 
@@ -196,6 +240,12 @@ public class RecipeService : IRecipeService
                     if (!uomExists)
                     {
                         return ApiResponse<RecipeResponse>.FailureResponse($"Unit of Measure with ID {ing.UomId} does not exist.");
+                    }
+
+                    var unitProblem = await DescribeUnitMismatchAsync(ing.ItemId, ing.UomId);
+                    if (unitProblem is not null)
+                    {
+                        return ApiResponse<RecipeResponse>.FailureResponse(unitProblem);
                     }
                 }
 

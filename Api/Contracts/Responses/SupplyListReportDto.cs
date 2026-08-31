@@ -14,7 +14,7 @@ public class SupplyListSummaryDto
     public int TotalItemsTracked { get; set; }
     public int CriticalLowStockCount { get; set; }
     public int OptimalStockCount { get; set; }
-    public int TotalReorderQuantityNeeded { get; set; }
+    public decimal TotalReorderQuantityNeeded { get; set; }
 }
 
 public class SupplyListItemDto
@@ -24,10 +24,10 @@ public class SupplyListItemDto
     public string Category { get; set; } = string.Empty;
     public string Unit { get; set; } = string.Empty;
     public string PrimarySupplier { get; set; } = "N/A";
-    public int CurrentStock { get; set; }
-    public int MinStock { get; set; }
-    public int MaxStock { get; set; }
+    public decimal CurrentStock { get; set; }
+    public decimal MinStock { get; set; }
+    public decimal MaxStock { get; set; }
     public string StockStatus { get; set; } = string.Empty;
-    public int SuggestedReorderQty { get; set; }
+    public decimal SuggestedReorderQty { get; set; }
     public string Status { get; set; } = string.Empty;
 }

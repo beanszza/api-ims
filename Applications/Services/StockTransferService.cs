@@ -6,6 +6,8 @@ using api_scm.Contracts.Requests;
 using api_scm.Contracts.Responses;
 using Applications.Interfaces;
 using Domains.Entities;
+using Domains.Enums;
+using Domains.Exceptions;
 using Infrastructures.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -16,11 +18,25 @@ public class StockTransferService : IStockTransferService
 {
     private readonly ScmDbContext _context;
     private readonly ILogger<StockTransferService> _logger;
+    private readonly IStatusTransitionGuard _statusGuard;
+    private readonly IPostingTransaction _posting;
+    private readonly ICurrentUserService _currentUser;
+    private readonly IAuditTrail _audit;
 
-    public StockTransferService(ScmDbContext context, ILogger<StockTransferService> logger)
+    public StockTransferService(
+        ScmDbContext context,
+        ILogger<StockTransferService> logger,
+        IStatusTransitionGuard statusGuard,
+        IPostingTransaction posting,
+        ICurrentUserService currentUser,
+        IAuditTrail audit)
     {
         _context = context;
         _logger = logger;
+        _statusGuard = statusGuard;
+        _posting = posting;
+        _currentUser = currentUser;
+        _audit = audit;
     }
 
     public async Task<ApiResponse<PagedData<StockTransferResponse>>> GetAllTransfersAsync(string? status = null, string? search = null, int page = 1, int pageSize = 10)
@@ -31,7 +47,13 @@ public class StockTransferService : IStockTransferService
 
             if (!string.IsNullOrWhiteSpace(status) && !status.Equals("All", StringComparison.OrdinalIgnoreCase))
             {
-                query = query.Where(st => st.Status.ToLower() == status.ToLower());
+                if (!EnumDbValue.TryParse<ShipmentStatus>(status, out var statusFilter))
+                {
+                    return ApiResponse<PagedData<StockTransferResponse>>.FailureResponse(
+                        $"Invalid status filter '{status}'. Accepted values: {EnumDbValue.DescribeAccepted<ShipmentStatus>()}.");
+                }
+
+                query = query.Where(st => st.Status == statusFilter);
             }
 
             if (!string.IsNullOrWhiteSpace(search))
@@ -46,28 +68,20 @@ public class StockTransferService : IStockTransferService
             }
 
             var totalCount = await query.CountAsync();
-            var transfers = await query
+
+            // Materialise first, then map. The status enum has to be rendered through
+            // EnumDbValue, which has no SQL translation, so the projection must run client side.
+            var rows = await query
                 .Include(st => st.Product)
-                    .ThenInclude(p => p.Item)
+                    .ThenInclude(p => p!.Item)
                 .Include(st => st.SourceLocation)
                 .Include(st => st.DestLocation)
                 .OrderByDescending(st => st.TransferId)
-                .Select(st => new StockTransferResponse
-                {
-                    TransferId = st.TransferId,
-                    ProductId = st.ProductId,
-                    ProductName = st.Product != null && st.Product.Item != null ? st.Product.Item.ItemName : "Unknown",
-                    SourceLocationId = st.SourceLocationId,
-                    SourceLocationName = st.SourceLocation != null ? st.SourceLocation.LocationName : "Unknown",
-                    DestLocationId = st.DestLocationId,
-                    DestLocationName = st.DestLocation != null ? st.DestLocation.LocationName : "Unknown",
-                    TransferQuantity = st.TransferQuantity,
-                    Status = st.Status,
-                    TransferDate = st.TransferDate
-                })
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
+
+            var transfers = rows.Select(MapToResponse).ToList();
 
             var pagedData = new PagedData<StockTransferResponse>
             {
@@ -86,7 +100,7 @@ public class StockTransferService : IStockTransferService
         }
     }
 
-    public async Task<ApiResponse<StockTransferResponse>> CreateTransferAsync(CreateStockTransferRequest request, int userId)
+    public async Task<ApiResponse<StockTransferResponse>> CreateTransferAsync(CreateStockTransferRequest request)
     {
         try
         {
@@ -124,22 +138,14 @@ public class StockTransferService : IStockTransferService
                 SourceLocationId = request.SourceLocationId,
                 DestLocationId = request.DestLocationId,
                 TransferQuantity = request.TransferQuantity,
-                Status = "Pending",
+                Status = ShipmentStatus.Pending,
                 TransferDate = request.TransferDate.HasValue ? DateTime.SpecifyKind(request.TransferDate.Value, DateTimeKind.Utc) : DateTime.UtcNow
             };
 
             _context.StockTransfers.Add(transfer);
             await _context.SaveChangesAsync();
 
-            var auditLog = new AuditLog
-            {
-                EntityName = "StockTransfer",
-                EntityId = transfer.TransferId.ToString(),
-                Action = "Created",
-                Timestamp = DateTime.UtcNow,
-                UserId = userId
-            };
-            _context.AuditLogs.Add(auditLog);
+            _audit.Record(nameof(StockTransfer), transfer.TransferId.ToString(), "Created");
             await _context.SaveChangesAsync();
 
             return ApiResponse<StockTransferResponse>.SuccessResponse(new StockTransferResponse
@@ -150,7 +156,7 @@ public class StockTransferService : IStockTransferService
                 SourceLocationId = transfer.SourceLocationId,
                 DestLocationId = transfer.DestLocationId,
                 TransferQuantity = transfer.TransferQuantity,
-                Status = transfer.Status,
+                Status = EnumDbValue.ToDbValue(transfer.Status),
                 TransferDate = transfer.TransferDate
             }, "Stock transfer created successfully.");
         }
@@ -161,7 +167,7 @@ public class StockTransferService : IStockTransferService
         }
     }
 
-    public async Task<ApiResponse<StockTransferResponse>> UpdateTransferAsync(int transferId, UpdateStockTransferRequest request, int userId)
+    public async Task<ApiResponse<StockTransferResponse>> UpdateTransferAsync(int transferId, UpdateStockTransferRequest request)
     {
         try
         {
@@ -177,7 +183,7 @@ public class StockTransferService : IStockTransferService
                 return ApiResponse<StockTransferResponse>.FailureResponse("Transfer not found.");
             }
 
-            if (transfer.Status != "Pending")
+            if (transfer.Status != ShipmentStatus.Pending)
             {
                 return ApiResponse<StockTransferResponse>.FailureResponse("Only Pending transfers can be edited.");
             }
@@ -205,15 +211,7 @@ public class StockTransferService : IStockTransferService
 
             await _context.SaveChangesAsync();
 
-            var auditLog = new AuditLog
-            {
-                EntityName = "StockTransfer",
-                EntityId = transfer.TransferId.ToString(),
-                Action = "Updated",
-                Timestamp = DateTime.UtcNow,
-                UserId = userId
-            };
-            _context.AuditLogs.Add(auditLog);
+            _audit.Record(nameof(StockTransfer), transfer.TransferId.ToString(), "Updated");
             await _context.SaveChangesAsync();
 
             return ApiResponse<StockTransferResponse>.SuccessResponse(new StockTransferResponse
@@ -226,7 +224,7 @@ public class StockTransferService : IStockTransferService
                 DestLocationId = transfer.DestLocationId,
                 DestLocationName = destLocation.LocationName,
                 TransferQuantity = transfer.TransferQuantity,
-                Status = transfer.Status,
+                Status = EnumDbValue.ToDbValue(transfer.Status),
                 TransferDate = transfer.TransferDate
             }, "Stock transfer updated successfully.");
         }
@@ -237,7 +235,7 @@ public class StockTransferService : IStockTransferService
         }
     }
 
-    public async Task<ApiResponse<StockTransferResponse>> UpdateTransferStatusAsync(int transferId, UpdateStockTransferStatusRequest request, int userId)
+    public async Task<ApiResponse<StockTransferResponse>> UpdateTransferStatusAsync(int transferId, UpdateStockTransferStatusRequest request)
     {
         try
         {
@@ -251,18 +249,28 @@ public class StockTransferService : IStockTransferService
             if (transfer == null)
                 return ApiResponse<StockTransferResponse>.FailureResponse("Transfer not found.");
 
-            if (transfer.Status == "Completed" || transfer.Status == "Cancelled")
-                return ApiResponse<StockTransferResponse>.FailureResponse($"Transfer is already {transfer.Status} and cannot be updated.");
+            if (_statusGuard.IsFinal(transfer.Status))
+                return ApiResponse<StockTransferResponse>.FailureResponse(
+                    $"Transfer is already {EnumDbValue.ToDbValue(transfer.Status)} and cannot be updated.");
 
-            string newStatus = request.Status;
-            
-            // Valid transitions: Pending -> In Transit -> Completed. Also allows Pending/In Transit -> Cancelled.
-            if (newStatus != "In Transit" && newStatus != "Completed" && newStatus != "Cancelled")
+            if (!EnumDbValue.TryParse<ShipmentStatus>(request.Status, out var newStatus)
+                || newStatus == ShipmentStatus.Unspecified)
             {
-                return ApiResponse<StockTransferResponse>.FailureResponse("Invalid status update.");
+                return ApiResponse<StockTransferResponse>.FailureResponse(
+                    $"Invalid status update '{request.Status}'. Accepted values: {EnumDbValue.DescribeAccepted<ShipmentStatus>()}.");
             }
 
-            if (newStatus == "In Transit" && transfer.Status == "Pending")
+            // Previously the branches below were the only thing standing between a caller and an
+            // unearned status: Pending -> Completed matched no branch, fell through, and marked the
+            // transfer delivered without ever debiting the source. The guard closes that.
+            _statusGuard.EnsureCanTransition(transfer.Status, newStatus);
+
+            var actor = _currentUser.Current;
+
+            // The stock movement, the audit entry and the status change are one posting.
+            await _posting.ExecuteAsync(async () =>
+            {
+            if (newStatus == ShipmentStatus.InTransit && transfer.Status == ShipmentStatus.Pending)
             {
                 // Deduct from source inventory
                 var sourceInventory = await _context.Inventories
@@ -270,7 +278,11 @@ public class StockTransferService : IStockTransferService
 
                 if (sourceInventory == null || sourceInventory.CurrentStock < transfer.TransferQuantity)
                 {
-                    return ApiResponse<StockTransferResponse>.FailureResponse("Insufficient stock at source location to begin transit.");
+                    // Throwing rather than returning aborts the posting, so the audit entry and status
+                    // change staged alongside it are rolled back too.
+                    throw new InsufficientStockException(
+                        "Insufficient stock at source location to begin transit. " +
+                        $"Requested {transfer.TransferQuantity}, available {sourceInventory?.CurrentStock ?? 0}.");
                 }
 
                 sourceInventory.CurrentStock -= transfer.TransferQuantity;
@@ -284,12 +296,13 @@ public class StockTransferService : IStockTransferService
                     ChangeQuantity = -transfer.TransferQuantity,
                     ActionType = "Transfer Out",
                     ReferenceId = transfer.TransferId.ToString(),
-                    UserId = userId,
+                    UserId = actor.UserId,
+                    UserName = actor.AuditName,
                     Timestamp = DateTime.UtcNow
                 };
                 _context.InventoryMovementLogs.Add(log);
             }
-            else if (newStatus == "Completed" && transfer.Status == "In Transit")
+            else if (newStatus == ShipmentStatus.Completed && transfer.Status == ShipmentStatus.InTransit)
             {
                 // The user explicitly requested that completed deliveries DO NOT add to the destination inventory.
                 // They only want it to be a straight deduction from the Commissary.
@@ -300,12 +313,13 @@ public class StockTransferService : IStockTransferService
                     ChangeQuantity = 0,
                     ActionType = "Transfer Completed (No Addition)",
                     ReferenceId = transfer.TransferId.ToString(),
-                    UserId = userId,
+                    UserId = actor.UserId,
+                    UserName = actor.AuditName,
                     Timestamp = DateTime.UtcNow
                 };
                 _context.InventoryMovementLogs.Add(log);
             }
-            else if (newStatus == "Cancelled" && transfer.Status == "In Transit")
+            else if (newStatus == ShipmentStatus.Cancelled && transfer.Status == ShipmentStatus.InTransit)
             {
                  // Revert stock back to source
                  var sourceInventory = await _context.Inventories
@@ -324,44 +338,48 @@ public class StockTransferService : IStockTransferService
                      ChangeQuantity = transfer.TransferQuantity,
                      ActionType = "Transfer Cancelled",
                      ReferenceId = transfer.TransferId.ToString(),
-                     UserId = userId,
+                     UserId = actor.UserId,
+                     UserName = actor.AuditName,
                      Timestamp = DateTime.UtcNow
                  };
                  _context.InventoryMovementLogs.Add(log);
             }
 
-            var auditLog = new AuditLog
-            {
-                EntityName = "StockTransfer",
-                EntityId = transfer.TransferId.ToString(),
-                FieldName = "Status",
-                OldValue = transfer.Status,
-                NewValue = newStatus,
-                Action = "StatusUpdated",
-                Timestamp = DateTime.UtcNow,
-                UserId = userId
-            };
-            _context.AuditLogs.Add(auditLog);
+            _audit.Record(
+                nameof(StockTransfer), transfer.TransferId.ToString(), "StatusUpdated",
+                fieldName: nameof(transfer.Status),
+                oldValue: EnumDbValue.ToDbValue(transfer.Status),
+                newValue: EnumDbValue.ToDbValue(newStatus));
 
             transfer.Status = newStatus;
             _context.StockTransfers.Update(transfer);
-            await _context.SaveChangesAsync();
+            });
 
-            var response = new StockTransferResponse
-            {
-                TransferId = transfer.TransferId,
-                ProductId = transfer.ProductId,
-                ProductName = transfer.Product.Item.ItemName,
-                SourceLocationId = transfer.SourceLocationId,
-                SourceLocationName = transfer.SourceLocation?.LocationName ?? "Unknown",
-                DestLocationId = transfer.DestLocationId,
-                DestLocationName = transfer.DestLocation?.LocationName ?? "Unknown",
-                TransferQuantity = transfer.TransferQuantity,
-                Status = transfer.Status,
-                TransferDate = transfer.TransferDate
-            };
+            var response = MapToResponse(transfer);
 
-            return ApiResponse<StockTransferResponse>.SuccessResponse(response, $"Transfer status updated to {newStatus}");
+            return ApiResponse<StockTransferResponse>.SuccessResponse(
+                response, $"Transfer status updated to {EnumDbValue.ToDbValue(newStatus)}");
+        }
+        catch (InvalidStatusTransitionException ex)
+        {
+            _logger.LogWarning("Rejected status transition on transfer {TransferId}: {Message}", transferId, ex.Message);
+            return ApiResponse<StockTransferResponse>.FailureResponse(ex.Message);
+        }
+        catch (InsufficientStockException ex)
+        {
+            _logger.LogWarning("Transfer {TransferId} could not be dispatched: {Message}", transferId, ex.Message);
+            return ApiResponse<StockTransferResponse>.FailureResponse(ex.Message);
+        }
+        catch (DbUpdateConcurrencyException)
+        {
+            // The balance moved between being read and being written. Since Task 5 that is detected
+            // rather than silently overwriting someone else's movement, so the honest answer is to ask
+            // for a retry against fresh numbers.
+            _logger.LogWarning(
+                "Transfer {TransferId} hit a concurrent stock change and was not applied.", transferId);
+            return ApiResponse<StockTransferResponse>.FailureResponse(
+                "Stock at the source location changed while this transfer was being processed. " +
+                "Reload and try again.");
         }
         catch (Exception ex)
         {
@@ -370,13 +388,27 @@ public class StockTransferService : IStockTransferService
         }
     }
 
+    private static StockTransferResponse MapToResponse(StockTransfer transfer) => new()
+    {
+        TransferId = transfer.TransferId,
+        ProductId = transfer.ProductId,
+        ProductName = transfer.Product?.Item?.ItemName ?? "Unknown",
+        SourceLocationId = transfer.SourceLocationId,
+        SourceLocationName = transfer.SourceLocation?.LocationName ?? "Unknown",
+        DestLocationId = transfer.DestLocationId,
+        DestLocationName = transfer.DestLocation?.LocationName ?? "Unknown",
+        TransferQuantity = transfer.TransferQuantity,
+        Status = EnumDbValue.ToDbValue(transfer.Status),
+        TransferDate = transfer.TransferDate
+    };
+
     public async Task<ApiResponse<TransferDashboardResponse>> GetTransferDashboardSummaryAsync()
     {
         try
         {
-            var pendingCount = await _context.StockTransfers.CountAsync(st => st.Status == "Pending");
-            var inTransitCount = await _context.StockTransfers.CountAsync(st => st.Status == "In Transit");
-            var completedCount = await _context.StockTransfers.CountAsync(st => st.Status == "Completed");
+            var pendingCount = await _context.StockTransfers.CountAsync(st => st.Status == ShipmentStatus.Pending);
+            var inTransitCount = await _context.StockTransfers.CountAsync(st => st.Status == ShipmentStatus.InTransit);
+            var completedCount = await _context.StockTransfers.CountAsync(st => st.Status == ShipmentStatus.Completed);
 
             var response = new TransferDashboardResponse
             {

@@ -66,6 +66,7 @@ public class FinishedProductService : IFinishedProductService
             {
                 ItemName = request.ProductName,
                 UomId = uom?.UomId ?? 1,
+                StockUomId = uom?.UomId ?? 1,
                 CategoryId = category?.CategoryId ?? 1,
                 MinStockLevel = 0,
                 MaxStockLevel = 100,

@@ -10,11 +10,24 @@ using Infrastructures.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Domains.Entities;
+using Domains.Enums;
 
 namespace Applications.Services;
 
 public class ReportService : IReportService
 {
+    /// <summary>
+    /// A batch counts as QA-passed if QA explicitly approved it, or if it has moved past QA into
+    /// packaging, completion, or stock. Kept in one place because four separate reports used to
+    /// repeat the same four-way string comparison, and they had already started to drift.
+    /// </summary>
+    private static bool IsQaPassed(ProductionBatch batch) =>
+        batch.QualityStatus == QcStatus.Approved
+        || batch.Status is BatchStatus.PassedQa or BatchStatus.InventoryAdded or BatchStatus.Completed;
+
+    private static bool IsQaRejected(ProductionBatch batch) =>
+        batch.QualityStatus == QcStatus.Rejected || batch.Status == BatchStatus.Rejected;
+
     private readonly ScmDbContext _context;
     private readonly ILogger<ReportService> _logger;
 
@@ -80,7 +93,7 @@ public class ReportService : IReportService
                         StockInQty = $"{stockIn} units",
                         StockOutQty = $"{stockOut} units",
                         WastageQty = $"{wastage} units",
-                        InventoryVelocity = stockIn > 0 ? $"{Math.Round((double)stockOut / stockIn * 100, 1)}%" : "0%"
+                        InventoryVelocity = stockIn > 0 ? $"{Math.Round(stockOut / stockIn * 100, 1)}%" : "0%"
                     };
                 }).ToList();
 
@@ -103,17 +116,17 @@ public class ReportService : IReportService
                 
                 var itemOutLogs = recentOutLogs.Where(l => l.ItemId == i.ItemId).ToList();
                 var thirtyDayUsage = itemOutLogs.Sum(l => Math.Abs(l.ChangeQuantity));
-                var avgDaily = Math.Round((double)thirtyDayUsage / 30, 1);
+                var avgDaily = Math.Round(thirtyDayUsage / 30m, 1);
 
-                double daysLeftRaw = avgDaily > 0 ? currentStock / avgDaily : 999;
+                decimal daysLeftRaw = avgDaily > 0 ? currentStock / avgDaily : 999m;
                 string daysLeftStr = daysLeftRaw > 100 ? ">100 Days" : $"{Math.Round(daysLeftRaw, 0)} Days";
-                string runoutDate = daysLeftRaw > 100 ? "N/A" : DateTime.UtcNow.AddDays(daysLeftRaw).ToString("MMM dd, yyyy");
-                
+                string runoutDate = daysLeftRaw > 100 ? "N/A" : DateTime.UtcNow.AddDays((double)daysLeftRaw).ToString("MMM dd, yyyy");
+
                 string badge = "NORMAL";
                 if (daysLeftRaw < 5 || currentStock == 0) badge = "CRITICAL";
                 else if (daysLeftRaw < 14 || currentStock < i.MinStockLevel) badge = "WARNING";
 
-                int recommended = Math.Max(0, i.MaxStockLevel - currentStock);
+                decimal recommended = Math.Max(0, i.MaxStockLevel - currentStock);
                 string uom = i.Uom?.Abbreviation ?? "units";
 
                 return new InventoryDemandForecastDto
@@ -170,11 +183,11 @@ public class ReportService : IReportService
             var summary = new OrderFulfillmentSummaryDto
             {
                 TotalOrders = pos.Count,
-                PendingOrders = pos.Count(po => po.Status.Equals("Pending", StringComparison.OrdinalIgnoreCase)),
-                ArrivedOrders = pos.Count(po => po.Status.Equals("Arrived", StringComparison.OrdinalIgnoreCase)),
-                CompletedOrders = pos.Count(po => po.Status.Equals("Completed", StringComparison.OrdinalIgnoreCase)),
-                RejectedOrders = pos.Count(po => po.Status.Equals("Rejected", StringComparison.OrdinalIgnoreCase)),
-                CancelledOrders = pos.Count(po => po.Status.Equals("Cancelled", StringComparison.OrdinalIgnoreCase))
+                PendingOrders = pos.Count(po => po.Status == PurchaseOrderStatus.Pending),
+                ArrivedOrders = pos.Count(po => po.Status == PurchaseOrderStatus.Arrived),
+                CompletedOrders = pos.Count(po => po.Status == PurchaseOrderStatus.Completed),
+                RejectedOrders = pos.Count(po => po.Status == PurchaseOrderStatus.Rejected),
+                CancelledOrders = pos.Count(po => po.Status == PurchaseOrderStatus.Cancelled)
             };
 
             var historicalAudit = pos.Select(po =>
@@ -246,21 +259,21 @@ public class ReportService : IReportService
             var batches = await query.ToListAsync();
 
             int totalBatches = batches.Count;
-            int scheduledBatches = batches.Count(b => string.Equals(b.Status, "Scheduled", StringComparison.OrdinalIgnoreCase));
-            int inProgressBatches = batches.Count(b => string.Equals(b.Status, "In Progress", StringComparison.OrdinalIgnoreCase));
-            int passedQaBatches = batches.Count(b => string.Equals(b.QualityStatus, "Approved", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Passed QA", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Inventory Added", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Completed", StringComparison.OrdinalIgnoreCase));
-            int rejectedBatches = batches.Count(b => string.Equals(b.QualityStatus, "Rejected", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Rejected", StringComparison.OrdinalIgnoreCase));
+            int scheduledBatches = batches.Count(b => b.Status == BatchStatus.Scheduled);
+            int inProgressBatches = batches.Count(b => b.Status == BatchStatus.InProgress);
+            int passedQaBatches = batches.Count(IsQaPassed);
+            int rejectedBatches = batches.Count(IsQaRejected);
 
             var groupedByRecipe = batches
                 .GroupBy(b => b.Recipe?.RecipeName ?? b.Product?.Item?.ItemName ?? "Unknown Recipe")
                 .Select(g =>
                 {
                     int cooked = g.Count();
-                    int totalOutput = g.Sum(b => b.ActualQuantity > 0 ? b.ActualQuantity : b.EstimatedQuantity);
-                    int passed = g.Count(b => string.Equals(b.QualityStatus, "Approved", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Passed QA", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Inventory Added", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Completed", StringComparison.OrdinalIgnoreCase));
-                    
+                    decimal totalOutput = g.Sum(b => b.ActualQuantity > 0 ? b.ActualQuantity : b.EstimatedQuantity);
+                    int passed = g.Count(IsQaPassed);
+
                     double yieldRate = cooked > 0 ? Math.Round((passed / (double)cooked) * 100, 1) : 0;
-                    int rejectedQty = g.Where(b => string.Equals(b.QualityStatus, "Rejected", StringComparison.OrdinalIgnoreCase) || string.Equals(b.Status, "Rejected", StringComparison.OrdinalIgnoreCase)).Sum(b => b.EstimatedQuantity);
+                    decimal rejectedQty = g.Where(IsQaRejected).Sum(b => b.EstimatedQuantity);
 
                     var topReason = g.Where(b => !string.IsNullOrWhiteSpace(b.RejectionReason))
                         .GroupBy(b => b.RejectionReason)
@@ -376,7 +389,9 @@ public class ReportService : IReportService
                         PoCode = $"PO-{po.PoId:D4}",
                         OrderDate = po.OrderDate.ToString("yyyy-MM-dd"),
                         ExpectedArrivalDate = po.ExpectedArrivalDate.ToString("yyyy-MM-dd"),
-                        Status = string.IsNullOrWhiteSpace(po.Status) ? "Pending" : po.Status,
+                        Status = po.Status == PurchaseOrderStatus.Unspecified
+                            ? EnumDbValue.ToDbValue(PurchaseOrderStatus.Pending)
+                            : EnumDbValue.ToDbValue(po.Status),
                         TotalItemsCount = po.PurchaseOrderItems?.Count ?? 0,
                         TotalAmount = po.TotalAmount,
                         QaStatus = string.IsNullOrWhiteSpace(po.QaStatus) ? "Pending QA" : po.QaStatus,
@@ -448,7 +463,9 @@ public class ReportService : IReportService
                 ReceiveDate = t.TransferDate.AddHours(1).ToString("yyyy-MM-dd HH:mm"),
                 TransitDuration = "1.0 Hours",
                 AssignedDriver = "Assigned Driver",
-                TransferStatus = string.IsNullOrWhiteSpace(t.Status) ? "Completed" : t.Status
+                TransferStatus = t.Status == ShipmentStatus.Unspecified
+                    ? EnumDbValue.ToDbValue(ShipmentStatus.Completed)
+                    : EnumDbValue.ToDbValue(t.Status)
             }).ToList();
 
             var response = new DistributionReportResponseDto
@@ -480,14 +497,14 @@ public class ReportService : IReportService
 
             SupplyListItemDto MapItem(Item i)
             {
-                int currentStock = i.Inventories?.Sum(inv => inv.CurrentStock) ?? 0;
+                decimal currentStock = i.Inventories?.Sum(inv => inv.CurrentStock) ?? 0m;
                 string supplierName = i.PurchaseOrderItems?
                     .Where(poi => poi.Supplier != null)
                     .Select(poi => poi.Supplier!.CompanyName)
                     .FirstOrDefault() ?? "N/A";
 
                 string stockStatus = "Optimal Level";
-                int suggestedReorder = 0;
+                decimal suggestedReorder = 0m;
 
                 if (currentStock == 0)
                 {

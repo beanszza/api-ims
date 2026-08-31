@@ -6,8 +6,12 @@ public class PurchaseOrderItem
     public int PoId { get; set; }
     public int ItemId { get; set; }
     public int SupplierId { get; set; }
-    public int PoItemQuantity { get; set; }
-    public int ReceivedQuantity { get; set; }
+
+    /// <summary>Quantity ordered.</summary>
+    public decimal PoItemQuantity { get; set; }
+
+    /// <summary>Running total actually received across all deliveries against this line.</summary>
+    public decimal ReceivedQuantity { get; set; }
 
     public PurchaseOrder? PurchaseOrder { get; set; }
     public Item? Item { get; set; }

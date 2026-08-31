@@ -14,5 +14,7 @@ public class CreateRecipeIngredientRequest
 {
     public int ItemId { get; set; }
     public int UomId { get; set; }
-    public int StandardQuantity { get; set; }
+
+    /// <summary>Quantity per batch. Decimal so "0.75 kg sugar" is expressible.</summary>
+    public decimal StandardQuantity { get; set; }
 }

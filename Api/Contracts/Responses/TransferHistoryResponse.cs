@@ -11,5 +11,10 @@ public class TransferHistoryResponse
     public string OldValue { get; set; } = string.Empty;
     public string NewValue { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; }
-    public int UserId { get; set; }
+
+    /// <summary>Auth subject or system sentinel.</summary>
+    public string UserId { get; set; } = string.Empty;
+
+    /// <summary>Display name captured when the change was made.</summary>
+    public string UserName { get; set; } = string.Empty;
 }
