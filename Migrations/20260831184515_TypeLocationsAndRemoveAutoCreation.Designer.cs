@@ -3,6 +3,7 @@ using System;
 using Infrastructures.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace api_scm.Migrations
 {
     [DbContext(typeof(ScmDbContext))]
-    partial class ScmDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260831184515_TypeLocationsAndRemoveAutoCreation")]
+    partial class TypeLocationsAndRemoveAutoCreation
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -365,7 +368,7 @@ namespace api_scm.Migrations
                     b.HasIndex("LocationType")
                         .IsUnique()
                         .HasDatabaseName("IX_Locations_SystemRole")
-                        .HasFilter("\"IsSystemLocation\" = true AND \"LocationType\" <> 'In Transit'");
+                        .HasFilter("\"IsSystemLocation\" = true");
 
                     b.HasIndex("ParentLocationId");
 

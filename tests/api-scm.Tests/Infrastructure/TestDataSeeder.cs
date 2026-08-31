@@ -29,7 +29,10 @@ public sealed class SeededWorld
 
     public int MainWarehouseId { get; init; }
     public int ProductionLocationId { get; init; }
+    public int WipLocationId { get; init; }
+    public int QuarantineLocationId { get; init; }
     public int FinishedGoodsLocationId { get; init; }
+    public int DisposalLocationId { get; init; }
     public int BranchManilaId { get; init; }
 
     public int UbeHalaya500ProductId { get; init; }
@@ -81,11 +84,16 @@ public static class TestDataSeeder
         var supplierB = NewSupplier("Supplier B Trading", "b@example.test");
         context.Suppliers.AddRange(supplierA, supplierB);
 
-        var mainWarehouse = NewLocation("Main Warehouse", "Warehouse");
-        var production = NewLocation("Production Floor", "Production");
-        var finishedGoods = NewLocation("Finished Goods", "FinishedGoods");
-        var branchManila = NewLocation("Branch Manila", "Branch");
-        context.Locations.AddRange(mainWarehouse, production, finishedGoods, branchManila);
+        var mainWarehouse = NewLocation("Main Warehouse", LocationType.Warehouse);
+        var production = NewLocation("Production Floor", LocationType.Production);
+        var wip = NewLocation("Work In Progress", LocationType.Wip);
+        var quarantine = NewLocation("Quarantine Hold", LocationType.Quarantine);
+        var finishedGoods = NewLocation("Finished Goods", LocationType.FinishedGoods);
+        var disposal = NewLocation("Disposal", LocationType.Disposal);
+        // A branch is an ordinary location, not a system role: there can be many of them.
+        var branchManila = NewLocation("Branch Manila", LocationType.Branch, isSystem: false);
+        context.Locations.AddRange(
+            mainWarehouse, production, wip, quarantine, finishedGoods, disposal, branchManila);
 
         await context.SaveChangesAsync();
 
@@ -145,7 +153,10 @@ public static class TestDataSeeder
             SupplierBId = supplierB.SupplierId,
             MainWarehouseId = mainWarehouse.LocationId,
             ProductionLocationId = production.LocationId,
+            WipLocationId = wip.LocationId,
+            QuarantineLocationId = quarantine.LocationId,
             FinishedGoodsLocationId = finishedGoods.LocationId,
+            DisposalLocationId = disposal.LocationId,
             BranchManilaId = branchManila.LocationId,
             UbeHalaya500ProductId = halayaProduct.ProductId,
             UbeHalaya500RecipeId = recipe.RecipeId
@@ -219,12 +230,17 @@ public static class TestDataSeeder
         IsActive = true
     };
 
-    private static Location NewLocation(string name, string type) => new()
+    /// <summary>
+    /// Creates a location that plays a system role, so <c>ILocationResolver</c> can find it the same way
+    /// it does at runtime.
+    /// </summary>
+    private static Location NewLocation(string name, LocationType type, bool isSystem = true) => new()
     {
         LocationName = name,
         LocationType = type,
         Address = "Test Address",
         IsActive = true,
-        Status = "Active"
+        Status = "Active",
+        IsSystemLocation = isSystem
     };
 }

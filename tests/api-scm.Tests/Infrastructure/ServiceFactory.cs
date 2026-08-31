@@ -57,14 +57,17 @@ public static class ServiceFactory
             new DocumentNumberService(context),
             new PostingTransaction(context),
             actor,
-            new AuditTrail(context, actor));
+            new AuditTrail(context, actor),
+            new LocationResolver(context));
     }
 
-    public static ProductionService Production(ScmDbContext context) => new(
+    public static ProductionService Production(ScmDbContext context, ICurrentUserService? user = null) => new(
         context,
         new StatusTransitionGuard(),
         new UomConversionService(context),
-        new PostingTransaction(context));
+        new PostingTransaction(context),
+        user ?? DefaultUser,
+        new LocationResolver(context));
 
     public static StockTransferService StockTransfers(
         ScmDbContext context, ICurrentUserService? user = null)

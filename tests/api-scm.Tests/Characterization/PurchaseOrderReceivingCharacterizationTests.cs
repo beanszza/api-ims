@@ -120,15 +120,11 @@ public sealed class PurchaseOrderReceivingCharacterizationTests(ScmDatabaseFixtu
             "both lines are accepted in full because the verdict has nowhere per-line to live");
     }
 
-    [Fact(DisplayName = "Defect 08: received stock lands in whatever location happens to be first")]
-    public async Task Defect08_Receiving_Uses_First_Location_And_Invents_A_Driver()
+    [Fact(DisplayName = "Defect 08 FIXED in Task 7: stock lands in the designated receiving warehouse")]
+    public async Task Defect08_Fixed_Receiving_Resolves_The_Warehouse_By_Role()
     {
         await using var context = CreateContext();
         var world = await TestDataSeeder.SeedBaselineAsync(context);
-
-        // Main Warehouse is seeded first, so it wins by accident, not by choice. Nothing in the request
-        // selects a receiving location.
-        var expectedAccidentalLocation = world.MainWarehouseId;
 
         var order = await TestDataSeeder.AddPurchaseOrderAsync(
             context, world.SupplierAId, world.UbeItemId, quantity: 25);
@@ -138,15 +134,60 @@ public sealed class PurchaseOrderReceivingCharacterizationTests(ScmDatabaseFixtu
         await using var verify = CreateContext();
         var inventory = await verify.Inventories.SingleAsync(i => i.ItemId == world.UbeItemId);
 
-        inventory.LocationId.Should().Be(expectedAccidentalLocation,
-            "the service calls Locations.FirstOrDefaultAsync() with no ordering or caller choice. " +
-            "Task 7 requires an explicit receiving location");
+        inventory.LocationId.Should().Be(world.MainWarehouseId,
+            "the location is resolved by its Warehouse role, not by whichever row sorted first");
 
-        // A placeholder driver is fabricated and attached to a stock balance (see also defect 14).
-        var drivers = await verify.Drivers.ToListAsync();
-        drivers.Should().ContainSingle().Which.DriverName.Should().Be("Default Driver");
-        inventory.DriverId.Should().Be(drivers[0].DriverId,
-            "a driver is bound to an inventory row, which is a modelling error");
+        // No driver is invented. A driver belongs to a shipment, not to a stock balance.
+        (await verify.Drivers.CountAsync()).Should().Be(0,
+            "the old code fabricated a 'Default Driver' purely to fill a column");
+        inventory.DriverId.Should().BeNull();
+    }
+
+    [Fact(DisplayName = "Task 7: receiving into a non-receiving location is refused")]
+    public async Task Task07_Receiving_Into_A_Branch_Is_Refused()
+    {
+        await using var context = CreateContext();
+        var world = await TestDataSeeder.SeedBaselineAsync(context);
+        var order = await TestDataSeeder.AddPurchaseOrderAsync(
+            context, world.SupplierAId, world.UbeItemId, quantity: 25);
+
+        var service = ServiceFactory.PurchaseOrders(context);
+        await service.UpdateOrderStatusAsync(order.PoId, new UpdatePurchaseOrderQaRequest { Status = "Arrived" });
+
+        var result = await service.UpdateOrderStatusAsync(order.PoId, new UpdatePurchaseOrderQaRequest
+        {
+            Status = "Completed",
+            ReceivingLocationId = world.BranchManilaId
+        });
+
+        result.Success.Should().BeFalse("a retail branch is not a goods-receiving location");
+        result.Message.Should().Contain("Branch");
+
+        await using var verify = CreateContext();
+        (await verify.Inventories.CountAsync()).Should().Be(0, "and nothing was posted");
+    }
+
+    [Fact(DisplayName = "Task 7: an explicit receiving location is honoured")]
+    public async Task Task07_An_Explicit_Receiving_Location_Is_Used()
+    {
+        await using var context = CreateContext();
+        var world = await TestDataSeeder.SeedBaselineAsync(context);
+        var order = await TestDataSeeder.AddPurchaseOrderAsync(
+            context, world.SupplierAId, world.UbeItemId, quantity: 25);
+
+        var service = ServiceFactory.PurchaseOrders(context);
+        await service.UpdateOrderStatusAsync(order.PoId, new UpdatePurchaseOrderQaRequest { Status = "Arrived" });
+        var result = await service.UpdateOrderStatusAsync(order.PoId, new UpdatePurchaseOrderQaRequest
+        {
+            Status = "Completed",
+            ReceivingLocationId = world.QuarantineLocationId
+        });
+
+        result.Success.Should().BeTrue(result.Message);
+
+        await using var verify = CreateContext();
+        (await verify.Inventories.SingleAsync(i => i.ItemId == world.UbeItemId))
+            .LocationId.Should().Be(world.QuarantineLocationId);
     }
 
     [Fact(DisplayName = "Defect 09: editing a received PO wipes ReceivedQuantity while stock stays")]

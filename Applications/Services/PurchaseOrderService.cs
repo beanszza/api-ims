@@ -26,6 +26,7 @@ public class PurchaseOrderService : IPurchaseOrderService
     private readonly IPostingTransaction _posting;
     private readonly ICurrentUserService _currentUser;
     private readonly IAuditTrail _audit;
+    private readonly ILocationResolver _locations;
 
     public PurchaseOrderService(
         ScmDbContext context,
@@ -34,7 +35,8 @@ public class PurchaseOrderService : IPurchaseOrderService
         IDocumentNumberService documentNumbers,
         IPostingTransaction posting,
         ICurrentUserService currentUser,
-        IAuditTrail audit)
+        IAuditTrail audit,
+        ILocationResolver locations)
     {
         _context = context;
         _logger = logger;
@@ -43,6 +45,7 @@ public class PurchaseOrderService : IPurchaseOrderService
         _posting = posting;
         _currentUser = currentUser;
         _audit = audit;
+        _locations = locations;
     }
 
     public async Task<ApiResponse<PurchaseOrderResponse>> CreatePurchaseOrderAsync(CreatePurchaseOrderRequest request)
@@ -250,22 +253,10 @@ public class PurchaseOrderService : IPurchaseOrderService
             {
             if (isCompletedTransition)
             {
-                // Retrieve default Location and Driver as fallback
-                var location = await _context.Locations.FirstOrDefaultAsync();
-                if (location == null)
-                {
-                    location = new Location { LocationName = "Main Warehouse", LocationType = "Storage" };
-                    _context.Locations.Add(location);
-                    await _context.SaveChangesAsync();
-                }
-
-                var driver = await _context.Drivers.FirstOrDefaultAsync();
-                if (driver == null)
-                {
-                    driver = new Driver { DriverName = "Default Driver", Number = "DRV-001" };
-                    _context.Drivers.Add(driver);
-                    await _context.SaveChangesAsync();
-                }
+                // A location chosen for its role, validated, and never invented. The old code took
+                // whichever row Locations.FirstOrDefaultAsync() happened to return and created a
+                // "Storage" location if the table was empty, so stock landed wherever by accident.
+                var location = await _locations.ResolveReceivingLocationAsync(request.ReceivingLocationId);
 
                 foreach (var poItem in order.PurchaseOrderItems)
                 {
@@ -286,7 +277,9 @@ public class PurchaseOrderService : IPurchaseOrderService
                         {
                             ItemId = poItem.ItemId,
                             LocationId = location.LocationId,
-                            DriverId = driver.DriverId,
+                            // No driver. A driver belongs to a shipment, not to a stock balance; the old
+                            // code fabricated a "Default Driver" purely to fill this field.
+                            DriverId = null,
                             CurrentStock = poItem.PoItemQuantity
                         };
                         _context.Inventories.Add(inventory);

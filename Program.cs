@@ -1,5 +1,6 @@
 using Applications.Interfaces;
 using Applications.Services;
+using Domains.Enums;
 using Infrastructures.Identity;
 using Infrastructures.Persistence;
 using Microsoft.EntityFrameworkCore;
@@ -148,6 +149,9 @@ builder.Services.AddHttpContextAccessor();
 builder.Services.AddScoped<ICurrentUserService, HttpContextCurrentUserService>();
 builder.Services.AddScoped<IAuditTrail, AuditTrail>();
 
+// Resolves locations by role so posting never guesses at, or invents, a location.
+builder.Services.AddScoped<ILocationResolver, LocationResolver>();
+
 builder.Services.AddScoped<IItemService, ItemService>();
 builder.Services.AddScoped<ISupplierService, SupplierService>();
 builder.Services.AddScoped<IRecipeService, RecipeService>();
@@ -261,16 +265,25 @@ if (app.Environment.IsDevelopment())
             UnitOfMeasureSeeder.Seed(db, migrateLogger);
             UnitOfMeasureSeeder.BackfillItemStockUom(db, migrateLogger);
 
+            // Locations the system resolves by role (receiving, production, WIP, quarantine, finished
+            // goods, disposal). Seeded before anything that posts stock, because posting now looks these
+            // up instead of creating them on the fly.
+            LocationSeeder.Seed(db, migrateLogger);
+
             if (!db.Locations.Any(l => l.LocationName == "Branch 1 - Quezon City"))
             {
                 Console.WriteLine("→ Seeding Testing Locations...");
-                db.Locations.Add(new Domains.Entities.Location { LocationName = "Branch 1 - Quezon City", LocationType = "Branch", Status = "Active" });
-                db.Locations.Add(new Domains.Entities.Location { LocationName = "Branch 2 - Makati", LocationType = "Branch", Status = "Active" });
-                db.Locations.Add(new Domains.Entities.Location { LocationName = "Bazaar Booth - SM North", LocationType = "Bazaar", Status = "Active" });
+                db.Locations.Add(new Domains.Entities.Location { LocationName = "Branch 1 - Quezon City", LocationType = LocationType.Branch, Status = "Active" });
+                db.Locations.Add(new Domains.Entities.Location { LocationName = "Branch 2 - Makati", LocationType = LocationType.Branch, Status = "Active" });
+                db.Locations.Add(new Domains.Entities.Location { LocationName = "Bazaar Booth - SM North", LocationType = LocationType.Bazaar, Status = "Active" });
                 db.SaveChanges();
                 migrateLogger.LogInformation("✓ Testing Locations seeded successfully.");
                 Console.WriteLine("✓ Testing Locations seeded.");
             }
+
+            // Every branch needs an in-transit lane so dispatched stock has somewhere to sit before the
+            // destination confirms receipt.
+            LocationSeeder.SeedInTransitLanesForBranches(db, migrateLogger);
 
             if (!db.Drivers.Any())
             {
@@ -299,16 +312,11 @@ if (app.Environment.IsDevelopment())
             }
             db.SaveChanges();
             
-            // Quick fix: Remove any inventory from non-Commissary locations (Branches)
-            var branchInventories = db.Inventories
-                .Include(i => i.Location)
-                .Where(i => i.Location != null && !i.Location.LocationName.ToLower().Contains("commissary"))
-                .ToList();
-            if (branchInventories.Any())
-            {
-                db.Inventories.RemoveRange(branchInventories);
-                db.SaveChanges();
-            }
+            // REMOVED: a startup routine that deleted every inventory row whose location name did not
+            // contain "commissary". It ran on every boot and would erase all branch stock, which is
+            // exactly the data the two-sided transfer work exists to maintain. Branches legitimately
+            // hold stock; if a balance is wrong the fix is a counted adjustment (Task 44), not a
+            // recurring mass delete.
 
             // The routine that used to merge duplicate inventory rows on every start has been removed.
             // A unique index on Inventories (ItemId, LocationId) now makes duplicates impossible, and

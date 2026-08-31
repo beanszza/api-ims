@@ -228,8 +228,8 @@ public sealed class ProductionConsumptionCharacterizationTests(ScmDatabaseFixtur
         stored.Status.Should().Be(BatchStatus.Scheduled, "the batch was never really started");
     }
 
-    [Fact(DisplayName = "Defect 18: posting a batch to inventory mutates the item's category")]
-    public async Task Defect18_AddToInventory_Mutates_Master_Data()
+    [Fact(DisplayName = "Defect 18 FIXED in Task 7: posting a batch no longer rewrites master data")]
+    public async Task Defect18_Fixed_AddToInventory_Leaves_Master_Data_Alone()
     {
         await using var context = CreateContext();
         var world = await TestDataSeeder.SeedBaselineAsync(context);
@@ -250,9 +250,15 @@ public sealed class ProductionConsumptionCharacterizationTests(ScmDatabaseFixtur
         await using var verify = CreateContext();
         var after = await verify.Items.SingleAsync(i => i.ItemId == world.UbeHalaya500ItemId);
 
-        after.CategoryId.Should().Be(world.FinishedGoodCategoryId,
-            "a stock posting silently rewrote master data so that a UI tab query would find the row. " +
-            "Task 31 removes this side effect");
+        after.CategoryId.Should().Be(world.RawMaterialCategoryId,
+            "the mis-categorisation is left exactly as it was found. Posting stock is not the moment to " +
+            "rewrite an item's master data, and doing it to satisfy a UI tab query meant a production " +
+            "run could silently recategorise a product");
+
+        // The finished goods location is still resolved correctly, by role rather than by name.
+        var posted = await verify.Inventories
+            .SingleAsync(i => i.ItemId == world.UbeHalaya500ItemId);
+        posted.LocationId.Should().Be(world.FinishedGoodsLocationId);
     }
 
     [Fact(DisplayName = "Defect 19/22: rejecting a batch loses the ingredients; packaging never moves")]

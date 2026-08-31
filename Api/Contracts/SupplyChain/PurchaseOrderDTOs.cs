@@ -28,6 +28,12 @@ namespace api_scm.Contracts.Requests
         public string? QaNotes { get; set; }
         public string? QaStatus { get; set; }
         public string? InspectedBy { get; set; }
+
+        /// <summary>
+        /// Where the goods are being received. Optional: omitting it uses the designated system
+        /// receiving warehouse rather than an arbitrary location.
+        /// </summary>
+        public int? ReceivingLocationId { get; set; }
     }
 }
 

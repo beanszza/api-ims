@@ -117,6 +117,25 @@ public class ScmDbContext : DbContext
     /// </remarks>
     private static void ConfigureStockIntegrity(ModelBuilder modelBuilder)
     {
+        // A location's parent, for a bay inside a warehouse or a branch's in-transit lane. Restrict so a
+        // parent cannot be removed while children still reference it.
+        modelBuilder.Entity<Location>()
+            .HasOne(l => l.ParentLocation)
+            .WithMany()
+            .HasForeignKey(l => l.ParentLocationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Only one system location per singleton role, so resolving a role always has a single answer.
+        // Two exclusions:
+        //  - ordinary (non-system) locations are unconstrained, so there can be many branches;
+        //  - In Transit is excluded because it is inherently per-destination: every branch needs its own
+        //    lane, so "one per role" is the wrong shape for it.
+        modelBuilder.Entity<Location>()
+            .HasIndex(l => l.LocationType)
+            .IsUnique()
+            .HasFilter("\"IsSystemLocation\" = true AND \"LocationType\" <> 'In Transit'")
+            .HasDatabaseName("IX_Locations_SystemRole");
+
         modelBuilder.Entity<Inventory>()
             .HasIndex(i => new { i.ItemId, i.LocationId })
             .IsUnique();
@@ -248,9 +267,13 @@ public class ScmDbContext : DbContext
             .HasConversion(EnumTextConverter<ShipmentStatus>())
             .HasColumnType("text");
 
-        // Location.LocationType and InventoryMovementLog.ActionType stay as strings for now: their
-        // stored values are ad hoc and need a normalising data migration first, which happens in
-        // Task 7 and Task 9 respectively.
+        modelBuilder.Entity<Location>()
+            .Property(e => e.LocationType)
+            .HasConversion(EnumTextConverter<LocationType>())
+            .HasColumnType("text");
+
+        // InventoryMovementLog.ActionType stays a string for now: its stored values are ad hoc and need
+        // a normalising data migration first, which happens in Task 9.
     }
 
     private static ValueConverter<TEnum, string> EnumTextConverter<TEnum>() where TEnum : struct, Enum

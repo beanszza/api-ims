@@ -14,17 +14,23 @@ public class ProductionService : IProductionService
     private readonly IStatusTransitionGuard _statusGuard;
     private readonly IUomConversionService _uomConversion;
     private readonly IPostingTransaction _posting;
+    private readonly ICurrentUserService _currentUser;
+    private readonly ILocationResolver _locations;
 
     public ProductionService(
         ScmDbContext context,
         IStatusTransitionGuard statusGuard,
         IUomConversionService uomConversion,
-        IPostingTransaction posting)
+        IPostingTransaction posting,
+        ICurrentUserService currentUser,
+        ILocationResolver locations)
     {
         _context = context;
         _statusGuard = statusGuard;
         _uomConversion = uomConversion;
         _posting = posting;
+        _currentUser = currentUser;
+        _locations = locations;
     }
 
     public async Task<ProductionBatchResponse> CreateBatchAsync(CreateProductionBatchRequest request)
@@ -115,6 +121,8 @@ public class ProductionService : IProductionService
         _statusGuard.EnsureCanTransition(batch.Status, targetStatus);
         batch.Status = targetStatus;
 
+        var actor = _currentUser.Current;
+
         // Starting a batch deducts every ingredient. Either the whole set of deductions and the stage
         // change land, or none of them do: a shortage discovered on the fifth ingredient must not leave
         // the first four already taken out of stock.
@@ -159,6 +167,8 @@ public class ProductionService : IProductionService
                             ActionType = "OUT",
                             ChangeQuantity = -deductAmount, // deduction
                             ReferenceId = $"Production Consumption - Batch {batch.BatchId}",
+                            UserId = actor.UserId,
+                            UserName = actor.AuditName,
                             Timestamp = DateTime.UtcNow
                         });
                     }
@@ -242,29 +252,17 @@ public class ProductionService : IProductionService
 
         _statusGuard.EnsureCanTransition(batch.Status, BatchStatus.InventoryAdded);
 
-        // Posting finished goods touches locations, categories, master data, a balance and the ledger.
-        // Previously each of those was saved separately, so a failure part way through could leave the
-        // stock added but the batch still unposted, or the reverse.
+        var actor = _currentUser.Current;
+
+        // Posting finished goods touches a location, a balance and the ledger. Previously each was saved
+        // separately, so a failure part way through could leave the stock added but the batch unposted.
         await _posting.ExecuteAsync(async () =>
         {
         // Determine actual quantity produced - assuming estimated for now if not set
         decimal actualQty = batch.ActualQuantity > 0 ? batch.ActualQuantity : batch.EstimatedQuantity;
 
-        // Add finished goods to inventory. Fetch or create the "Finished Goods" location.
-        var finishedGoodsLocation = await _context.Locations
-            .FirstOrDefaultAsync(l => l.LocationName == "Finished Goods" || l.LocationName.ToLower().Contains("finished"));
-            
-        if (finishedGoodsLocation == null)
-        {
-            finishedGoodsLocation = new Domains.Entities.Location
-            {
-                LocationName = "Finished Goods",
-                Address = "Main Plant",
-                Status = "Active"
-            };
-            _context.Locations.Add(finishedGoodsLocation);
-            await _context.SaveChangesAsync();
-        }
+        // Resolved by role, not by matching on a name containing "finished", and never created here.
+        var finishedGoodsLocation = await _locations.RequireSystemLocationAsync(LocationType.FinishedGoods);
         var locationId = finishedGoodsLocation.LocationId;
         
         // Determine actual item ID from the finished product or recipe
@@ -284,23 +282,10 @@ public class ProductionService : IProductionService
 
         if (actualItemId == 0) throw new Exception("Item ID not found for this product.");
 
-        // Ensure the item is categorized under Finished Good so tab queries find it
-        var finishedGoodCategory = await _context.Categories
-            .FirstOrDefaultAsync(c => c.CategoryName.ToLower().Contains("finished good"));
-
-        if (finishedGoodCategory == null)
-        {
-            finishedGoodCategory = new Domains.Entities.Category { CategoryName = "Finished Good", Description = "Finished Goods" };
-            _context.Categories.Add(finishedGoodCategory);
-            await _context.SaveChangesAsync();
-        }
-
-        var item = await _context.Items.FirstOrDefaultAsync(i => i.ItemId == actualItemId);
-        if (item != null)
-        {
-            item.CategoryId = finishedGoodCategory.CategoryId;
-            await _context.SaveChangesAsync();
-        }
+        // The category mutation that used to live here has been removed. Posting stock is not the right
+        // moment to rewrite an item's master data, and doing it to satisfy a UI tab query meant a
+        // production run could silently recategorise a product. Item categorisation is now set when the
+        // finished product is defined. See Task 31 for the full removal of the remaining side effects.
 
         var existingInventory = await _context.Inventories
             .FirstOrDefaultAsync(i => i.ItemId == actualItemId && i.LocationId == locationId);
@@ -327,6 +312,8 @@ public class ProductionService : IProductionService
             ActionType = "IN",
             ChangeQuantity = actualQty,
             ReferenceId = $"Production Batch {batchId}",
+            UserId = actor.UserId,
+            UserName = actor.AuditName,
             Timestamp = DateTime.UtcNow
         });
 

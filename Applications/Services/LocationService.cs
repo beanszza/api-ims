@@ -6,6 +6,7 @@ using api_scm.Contracts.Requests;
 using api_scm.Contracts.Responses;
 using Applications.Interfaces;
 using Domains.Entities;
+using Domains.Enums;
 using Infrastructures.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -28,24 +29,48 @@ public class LocationService : ILocationService
         _audit = audit;
     }
 
+    private static LocationResponse MapToResponse(Location l) => new()
+    {
+        LocationId = l.LocationId,
+        LocationName = l.LocationName,
+        LocationType = EnumDbValue.ToDbValue(l.LocationType),
+        Address = l.Address,
+        IsActive = l.IsActive,
+        Status = l.Status,
+        IsSystemLocation = l.IsSystemLocation,
+        ParentLocationId = l.ParentLocationId
+    };
+
+    /// <summary>
+    /// Parses a caller-supplied location type, returning an error message when it is not a known role.
+    /// </summary>
+    private static string? TryParseLocationType(string? raw, out LocationType parsed)
+    {
+        if (EnumDbValue.TryParse(raw, out parsed) && parsed != LocationType.Unspecified)
+        {
+            return null;
+        }
+
+        return $"'{raw}' is not a valid location type. " +
+               $"Accepted values: {EnumDbValue.DescribeAccepted<LocationType>()}.";
+    }
+
     public async Task<ApiResponse<PagedData<LocationResponse>>> GetAllLocationsAsync(int page = 1, int pageSize = 10)
     {
         try
         {
             var totalCount = await _context.Locations.CountAsync();
-            var locations = await _context.Locations
-                .Select(l => new LocationResponse
-                {
-                    LocationId = l.LocationId,
-                    LocationName = l.LocationName,
-                    LocationType = l.LocationType,
-                    Address = l.Address,
-                    IsActive = l.IsActive,
-                    Status = l.Status
-                })
+
+            // Materialise before mapping: LocationType is an enum on the entity and a string on the
+            // response, and EnumDbValue has no SQL translation.
+            var rows = await _context.Locations
+                .AsNoTracking()
+                .OrderBy(l => l.LocationId)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
+
+            var locations = rows.Select(MapToResponse).ToList();
 
             var pagedData = new PagedData<LocationResponse>
             {
@@ -73,10 +98,23 @@ public class LocationService : ILocationService
             if (string.IsNullOrWhiteSpace(request.LocationType))
                 return ApiResponse<LocationResponse>.FailureResponse("LocationType is required.");
 
+            var typeError = TryParseLocationType(request.LocationType, out var requestedType);
+            if (typeError is not null)
+                return ApiResponse<LocationResponse>.FailureResponse(typeError);
+
             var location = await _context.Locations.FirstOrDefaultAsync(l => l.LocationId == id);
-            
+
             if (location == null)
                 return ApiResponse<LocationResponse>.FailureResponse("Location not found.");
+
+            // A system location is resolved by role, so changing its role would silently break posting.
+            if (location.IsSystemLocation && location.LocationType != requestedType)
+            {
+                return ApiResponse<LocationResponse>.FailureResponse(
+                    $"'{location.LocationName}' is a system location for " +
+                    $"{EnumDbValue.ToDbValue(location.LocationType)} and its type cannot be changed. " +
+                    "Rename it or add a separate location instead.");
+            }
 
             // Field-level audit entries, attributed to whoever is making the request.
             var locationId = location.LocationId.ToString();
@@ -87,10 +125,12 @@ public class LocationService : ILocationService
                     nameof(location.LocationName), location.LocationName, request.LocationName);
             }
 
-            if (location.LocationType != request.LocationType)
+            if (location.LocationType != requestedType)
             {
                 _audit.Record(nameof(Location), locationId, "Updated",
-                    nameof(location.LocationType), location.LocationType, request.LocationType);
+                    nameof(location.LocationType),
+                    EnumDbValue.ToDbValue(location.LocationType),
+                    EnumDbValue.ToDbValue(requestedType));
             }
 
             var newStatus = string.IsNullOrWhiteSpace(request.Status) ? location.Status : request.Status;
@@ -101,7 +141,7 @@ public class LocationService : ILocationService
             }
 
             location.LocationName = request.LocationName;
-            location.LocationType = request.LocationType;
+            location.LocationType = requestedType;
             location.Address = request.Address;
             location.IsActive = request.IsActive;
             location.Status = newStatus;
@@ -109,17 +149,8 @@ public class LocationService : ILocationService
             _context.Locations.Update(location);
             await _context.SaveChangesAsync();
 
-            var response = new LocationResponse
-            {
-                LocationId = location.LocationId,
-                LocationName = location.LocationName,
-                LocationType = location.LocationType,
-                Address = location.Address,
-                IsActive = location.IsActive,
-                Status = location.Status
-            };
-
-            return ApiResponse<LocationResponse>.SuccessResponse(response, "Location updated successfully.");
+            return ApiResponse<LocationResponse>.SuccessResponse(
+                MapToResponse(location), "Location updated successfully.");
         }
         catch (Exception ex)
         {
@@ -137,13 +168,19 @@ public class LocationService : ILocationService
             if (string.IsNullOrWhiteSpace(request.LocationType))
                 return ApiResponse<LocationResponse>.FailureResponse("LocationType is required.");
 
+            var typeError = TryParseLocationType(request.LocationType, out var requestedType);
+            if (typeError is not null)
+                return ApiResponse<LocationResponse>.FailureResponse(typeError);
+
             var location = new Location
             {
                 LocationName = request.LocationName,
-                LocationType = request.LocationType,
+                LocationType = requestedType,
                 Address = request.Address,
                 IsActive = request.IsActive,
-                Status = string.IsNullOrWhiteSpace(request.Status) ? "Active" : request.Status
+                Status = string.IsNullOrWhiteSpace(request.Status) ? "Active" : request.Status,
+                // Only the seeder creates system locations; anything created through the API is ordinary.
+                IsSystemLocation = false
             };
 
             _context.Locations.Add(location);
@@ -153,17 +190,8 @@ public class LocationService : ILocationService
                 nameof(location.LocationName), null, location.LocationName);
             await _context.SaveChangesAsync();
 
-            var response = new LocationResponse
-            {
-                LocationId = location.LocationId,
-                LocationName = location.LocationName,
-                LocationType = location.LocationType,
-                Address = location.Address,
-                IsActive = location.IsActive,
-                Status = location.Status
-            };
-
-            return ApiResponse<LocationResponse>.SuccessResponse(response, "Location created successfully.");
+            return ApiResponse<LocationResponse>.SuccessResponse(
+                MapToResponse(location), "Location created successfully.");
         }
         catch (Exception ex)
         {
