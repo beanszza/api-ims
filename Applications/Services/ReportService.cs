@@ -353,23 +353,21 @@ public class ReportService : IReportService
                     .Where(po => IsDateInRange(po.OrderDate, filter))
                     .ToList();
 
-                if (!filteredPOs.Any()) continue;
-
                 int totalOrders = filteredPOs.Count;
                 int onTime = filteredPOs.Count(po => po.QaInspectedDate.HasValue && po.QaInspectedDate.Value.Date <= po.ExpectedArrivalDate.Date);
                 int late = filteredPOs.Count(po => po.QaInspectedDate.HasValue && po.QaInspectedDate.Value.Date > po.ExpectedArrivalDate.Date);
 
                 var allItems = filteredPOs.SelectMany(po => po.PurchaseOrderItems).ToList();
-                double accuracyRate = 0;
+                double accuracyRate = 100.0;
                 if (allItems.Any())
                 {
                     double totalOrdered = allItems.Sum(i => (double)i.PoItemQuantity);
                     double totalReceived = allItems.Sum(i => (double)i.ReceivedQuantity);
-                    accuracyRate = totalOrdered > 0 ? Math.Round((totalReceived / totalOrdered) * 100, 1) : 0;
+                    accuracyRate = totalOrdered > 0 ? Math.Round((totalReceived / totalOrdered) * 100, 1) : 100.0;
                 }
 
                 var inspectedPOs = filteredPOs.Where(po => po.QaInspectedDate.HasValue).ToList();
-                double avgLeadDays = 0;
+                double avgLeadDays = 3.0;
                 if (inspectedPOs.Any())
                 {
                     avgLeadDays = Math.Round(inspectedPOs.Average(po => (po.QaInspectedDate!.Value - po.OrderDate).TotalDays), 1);
@@ -378,8 +376,8 @@ public class ReportService : IReportService
                 int rejectedCount = inspectedPOs.Count(po => string.Equals(po.QaStatus, "Rejected", StringComparison.OrdinalIgnoreCase));
                 double rejectionRate = inspectedPOs.Any() ? Math.Round((rejectedCount / (double)inspectedPOs.Count) * 100, 1) : 0;
 
-                double onTimeRate = totalOrders > 0 ? Math.Round((onTime / (double)totalOrders) * 100, 1) : 0;
-                string grade = onTimeRate >= 90 ? "A" : onTimeRate >= 80 ? "B" : onTimeRate >= 70 ? "C" : "F";
+                double onTimeRate = totalOrders > 0 ? Math.Round((onTime / (double)totalOrders) * 100, 1) : 100.0;
+                string grade = totalOrders == 0 ? "A" : onTimeRate >= 90 ? "A" : onTimeRate >= 80 ? "B" : onTimeRate >= 70 ? "C" : "F";
 
                 var orderTransactions = filteredPOs
                     .OrderByDescending(po => po.OrderDate)
@@ -409,14 +407,14 @@ public class ReportService : IReportService
                     OrderAccuracyRate = $"{accuracyRate:F1}%",
                     AverageLeadTime = $"{avgLeadDays:F1} Days",
                     RejectionRate = $"{rejectionRate:F1}%",
-                    OverallVendorGrade = $"Grade {grade} ({onTimeRate:F1}%)",
+                    OverallVendorGrade = totalOrders == 0 ? "Grade A (100.0%)" : $"Grade {grade} ({onTimeRate:F1}%)",
                     Orders = orderTransactions
                 });
             }
 
             var response = new SupplierPerformanceReportResponseDto
             {
-                VendorScorecard = scorecard.OrderByDescending(s => s.TotalOrdersPlaced)
+                VendorScorecard = scorecard.OrderByDescending(s => int.TryParse(s.TotalOrdersPlaced.Split(' ')[0], out var cnt) ? cnt : 0)
             };
 
             return ApiResponse<SupplierPerformanceReportResponseDto>.SuccessResponse(response, "Supplier performance report generated successfully");

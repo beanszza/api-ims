@@ -34,9 +34,31 @@ public class AuditLogsController : ControllerBase
 
         if (!string.IsNullOrEmpty(cleanType))
         {
-            auditQuery = auditQuery.Where(a => 
-                a.EntityName.ToLower().Contains(cleanType) || 
-                cleanType.Contains(a.EntityName.ToLower()));
+            if (cleanType.Contains("supply") || cleanType.Contains("item"))
+            {
+                auditQuery = auditQuery.Where(a => 
+                    a.EntityName.ToLower().Contains("supply") || 
+                    a.EntityName.ToLower().Contains("item") ||
+                    a.EntityName.ToLower().Contains("inventory"));
+            }
+            else if (cleanType.Contains("recipe") || cleanType.Contains("bom"))
+            {
+                auditQuery = auditQuery.Where(a => 
+                    a.EntityName.ToLower().Contains("recipe") || 
+                    a.EntityName.ToLower().Contains("bom"));
+            }
+            else if (cleanType.Contains("supplier") || cleanType.Contains("vendor"))
+            {
+                auditQuery = auditQuery.Where(a => 
+                    a.EntityName.ToLower().Contains("supplier") || 
+                    a.EntityName.ToLower().Contains("vendor"));
+            }
+            else
+            {
+                auditQuery = auditQuery.Where(a => 
+                    a.EntityName.ToLower().Contains(cleanType) || 
+                    cleanType.Contains(a.EntityName.ToLower()));
+            }
         }
 
         if (specificDate.HasValue)
@@ -236,7 +258,16 @@ public class AuditLogsController : ControllerBase
             }
         }
 
-        var finalLogs = filteredLogs.ToList();
+        var finalLogs = filteredLogs
+            .OrderByDescending(l => {
+                var dtStr = (l as dynamic).timestamp as string;
+                if (!string.IsNullOrEmpty(dtStr) && DateTime.TryParse(dtStr, out DateTime dt)) {
+                    return dt;
+                }
+                return DateTime.MinValue;
+            })
+            .ToList();
+
         return Ok(finalLogs);
     }
 }

@@ -159,6 +159,27 @@ public class RecipeService : IRecipeService
             _context.Recipes.Add(recipe);
             await _context.SaveChangesAsync();
 
+            try
+            {
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    EntityName = "Recipe",
+                    EntityId = recipe.RecipeName,
+                    Action = "Recipe/BOM Created & Registered",
+                    FieldName = "Production Supervisor",
+                    OldValue = "0",
+                    NewValue = $"{recipe.OutputQuantity} units",
+                    Timestamp = DateTime.UtcNow,
+                    UserId = Domains.Identity.SystemUsers.System,
+                    UserName = "Kitchen Manager"
+                });
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception auditEx)
+            {
+                _logger.LogWarning("Failed to write audit log for recipe create: {Msg}", auditEx.Message);
+            }
+
             var response = new RecipeResponse
             {
                 RecipeId = recipe.RecipeId,
@@ -289,6 +310,27 @@ public class RecipeService : IRecipeService
 
             _context.Recipes.Update(recipe);
             await _context.SaveChangesAsync();
+
+            try
+            {
+                _context.AuditLogs.Add(new AuditLog
+                {
+                    EntityName = "Recipe",
+                    EntityId = recipe.RecipeName,
+                    Action = recipe.IsActive ? "Recipe/BOM Updated & Active" : "Recipe/BOM Status Changed to Inactive",
+                    FieldName = "Production Supervisor",
+                    OldValue = "Updated",
+                    NewValue = $"{recipe.OutputQuantity} units",
+                    Timestamp = DateTime.UtcNow,
+                    UserId = Domains.Identity.SystemUsers.System,
+                    UserName = "Kitchen Manager"
+                });
+                await _context.SaveChangesAsync();
+            }
+            catch (Exception auditEx)
+            {
+                _logger.LogWarning("Failed to write audit log for recipe update: {Msg}", auditEx.Message);
+            }
 
             var response = new RecipeResponse
             {
