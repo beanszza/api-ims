@@ -163,6 +163,23 @@ builder.Services.AddScoped<IRecipeService, RecipeService>();
 builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
 builder.Services.AddScoped<IStockTransferService, StockTransferService>();
 builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<ILotService, LotService>();
+builder.Services.AddScoped<ISupplierItemService, SupplierItemService>();
+builder.Services.AddScoped<ISupplierDocumentService, SupplierDocumentService>();
+builder.Services.AddScoped<IApprovalService, ApprovalService>();
+builder.Services.AddScoped<IPurchaseRequisitionService, PurchaseRequisitionService>();
+builder.Services.AddScoped<IGoodsReceiptService, GoodsReceiptService>();
+builder.Services.AddScoped<IQualityInspectionService, QualityInspectionService>();
+builder.Services.AddScoped<INcrService, NcrService>();
+builder.Services.AddScoped<ISupplierScorecardService, SupplierScorecardService>();
+builder.Services.AddScoped<IAllocationService, AllocationService>();
+builder.Services.AddScoped<IDisposalService, DisposalService>();
+builder.Services.AddScoped<IBranchDistributionService, BranchDistributionService>();
+builder.Services.AddScoped<ITraceabilityService, TraceabilityService>();
+builder.Services.AddScoped<IRecallService, RecallService>();
+builder.Services.AddScoped<IValuationService, ValuationService>();
+builder.Services.AddScoped<ICycleCountService, CycleCountService>();
+builder.Services.AddScoped<IMrpService, MrpService>();
 builder.Services.AddScoped<IFinishedProductService, FinishedProductService>();
 builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddScoped<IProductionService, ProductionService>();
@@ -274,6 +291,12 @@ if (app.Environment.IsDevelopment())
             // goods, disposal). Seeded before anything that posts stock, because posting now looks these
             // up instead of creating them on the fly.
             LocationSeeder.Seed(db, migrateLogger);
+
+            // Supplier catalog linking vendors to items with pricing, pack sizes, and lead times.
+            SupplierItemSeeder.Seed(db, migrateLogger);
+
+            // Supplier compliance documents (FDA LTO, Sanitary Permits, COA).
+            SupplierDocumentSeeder.Seed(db, migrateLogger);
 
             if (!db.Locations.Any(l => l.LocationName == "Branch 1 - Quezon City"))
             {
@@ -413,6 +436,7 @@ if (app.Environment.IsDevelopment())
 }
 
 // app.UseHttpsRedirection();
+app.UsePathBase("/api/scms");
 app.UseCors("AllowAll");
 app.UseStaticFiles();
 app.UseAuthorization();

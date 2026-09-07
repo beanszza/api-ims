@@ -4,7 +4,7 @@ public class CreateRecipeRequest
 {
     public int ProductId { get; set; }
     public string RecipeName { get; set; } = string.Empty;
-    public int OutputQuantity { get; set; }
+    public decimal OutputQuantity { get; set; }
     public string Notes { get; set; } = string.Empty;
     public bool IsActive { get; set; } = true;
     public List<CreateRecipeIngredientRequest> Ingredients { get; set; } = new();

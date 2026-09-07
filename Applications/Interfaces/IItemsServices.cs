@@ -10,4 +10,5 @@ public interface IItemService
 	Task<ApiResponse<ItemResponse>> CreateItemAsync(CreateItemRequest request);
 	Task<ApiResponse<ItemResponse>> UpdateItemAsync(int id, UpdateItemRequest request);
 	Task<ApiResponse<EmptyPayload>> DeleteItemAsync(int id);
+    Task<ApiResponse<EmptyPayload>> ResetSupplyItemsAsync();
 }

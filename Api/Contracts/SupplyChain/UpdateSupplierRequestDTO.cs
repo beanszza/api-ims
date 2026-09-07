@@ -9,4 +9,5 @@ public class UpdateSupplierRequest
     public string? Address { get; set; }
     public string? Website { get; set; }
     public bool? IsActive { get; set; }
+    public List<int>? SuppliedItemIds { get; set; }
 }

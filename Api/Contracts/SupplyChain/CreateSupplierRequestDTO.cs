@@ -9,4 +9,5 @@ public class CreateSupplierRequest
     public string Address { get; set; } = string.Empty;
     public string? Website { get; set; }
     public bool IsActive { get; set; } = true;
+    public List<int> SuppliedItemIds { get; set; } = new();
 }

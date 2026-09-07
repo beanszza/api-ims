@@ -80,4 +80,11 @@ public class ItemsController : ControllerBase
         var result = await _itemService.DeleteItemAsync(id);
         return result.Success ? Ok(result) : NotFound(result);
     }
+
+    [HttpPost("reset")]
+    public async Task<ActionResult<ApiResponse<EmptyPayload>>> ResetSupplyItems()
+    {
+        var result = await _itemService.ResetSupplyItemsAsync();
+        return result.Success ? Ok(result) : StatusCode(500, result);
+    }
 }

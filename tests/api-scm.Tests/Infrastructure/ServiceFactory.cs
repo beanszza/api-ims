@@ -61,13 +61,30 @@ public static class ServiceFactory
             new LocationResolver(context));
     }
 
-    public static ProductionService Production(ScmDbContext context, ICurrentUserService? user = null) => new(
-        context,
-        new StatusTransitionGuard(),
-        new UomConversionService(context),
-        new PostingTransaction(context),
-        user ?? DefaultUser,
-        new LocationResolver(context));
+    public static ProductionService Production(ScmDbContext context, ICurrentUserService? user = null)
+    {
+        var actor = user ?? DefaultUser;
+        var docNumbers = DocumentNumbers(context);
+        var postingService = new StockPostingService(
+            context,
+            actor,
+            new LotCodeGenerator(context, docNumbers),
+            new LocationResolver(context),
+            new StatusTransitionGuard());
+
+        return new ProductionService(
+            context,
+            postingService,
+            Allocation(context),
+            docNumbers,
+            new StatusTransitionGuard(),
+            new UomConversionService(context),
+            Posting(context),
+            actor,
+            new LocationResolver(context),
+            new AuditTrail(context, actor),
+            NullLogger<ProductionService>.Instance);
+    }
 
     public static StockTransferService StockTransfers(
         ScmDbContext context, ICurrentUserService? user = null)
@@ -76,11 +93,62 @@ public static class ServiceFactory
         return new StockTransferService(
             context,
             NullLogger<StockTransferService>.Instance,
+            DocumentNumbers(context),
+            Allocation(context),
             new StatusTransitionGuard(),
             new PostingTransaction(context),
             actor,
             new AuditTrail(context, actor));
     }
+
+    public static BranchDistributionService BranchDistribution(
+        ScmDbContext context, ICurrentUserService? user = null)
+    {
+        var actor = user ?? DefaultUser;
+        return new BranchDistributionService(
+            context,
+            DocumentNumbers(context),
+            StockTransfers(context, actor),
+            new LocationResolver(context),
+            Posting(context),
+            actor,
+            new AuditTrail(context, actor),
+            NullLogger<BranchDistributionService>.Instance);
+    }
+
+    public static TraceabilityService Traceability(ScmDbContext context)
+        => new(context, NullLogger<TraceabilityService>.Instance);
+
+    public static RecallService Recall(ScmDbContext context, ICurrentUserService? user = null)
+    {
+        var actor = user ?? DefaultUser;
+        return new RecallService(
+            context,
+            Traceability(context),
+            DocumentNumbers(context),
+            Posting(context),
+            actor,
+            new AuditTrail(context, actor),
+            NullLogger<RecallService>.Instance);
+    }
+
+    public static ValuationService Valuation(ScmDbContext context)
+        => new(context, NullLogger<ValuationService>.Instance);
+
+    public static CycleCountService CycleCounts(ScmDbContext context, ICurrentUserService? user = null)
+    {
+        var actor = user ?? DefaultUser;
+        return new CycleCountService(
+            context,
+            DocumentNumbers(context),
+            Posting(context),
+            actor,
+            new AuditTrail(context, actor),
+            NullLogger<CycleCountService>.Instance);
+    }
+
+    public static MrpService Mrp(ScmDbContext context)
+        => new(context, NullLogger<MrpService>.Instance);
 
     public static RecipeService Recipes(ScmDbContext context) => new(
         context,
@@ -97,6 +165,97 @@ public static class ServiceFactory
     {
         var actor = user ?? DefaultUser;
         return new LocationService(context, NullLogger<LocationService>.Instance, new AuditTrail(context, actor));
+    }
+
+    public static ApprovalService Approvals(ScmDbContext context, ICurrentUserService? user = null)
+    {
+        var actor = user ?? DefaultUser;
+        return new ApprovalService(context, actor, new AuditTrail(context, actor), NullLogger<ApprovalService>.Instance);
+    }
+
+    public static PurchaseRequisitionService PurchaseRequisitions(ScmDbContext context, ICurrentUserService? user = null)
+    {
+        var actor = user ?? DefaultUser;
+        return new PurchaseRequisitionService(
+            context,
+            PurchaseOrders(context, actor),
+            DocumentNumbers(context),
+            actor,
+            new AuditTrail(context, actor),
+            NullLogger<PurchaseRequisitionService>.Instance);
+    }
+
+    public static GoodsReceiptService GoodsReceipts(ScmDbContext context, ICurrentUserService? user = null)
+    {
+        var actor = user ?? DefaultUser;
+        var docNumbers = DocumentNumbers(context);
+        var postingService = new StockPostingService(
+            context,
+            actor,
+            new LotCodeGenerator(context, docNumbers),
+            new LocationResolver(context),
+            new StatusTransitionGuard());
+
+        return new GoodsReceiptService(
+            context,
+            postingService,
+            Posting(context),
+            docNumbers,
+            new LocationResolver(context),
+            actor,
+            new AuditTrail(context, actor),
+            NullLogger<GoodsReceiptService>.Instance);
+    }
+
+    public static QualityInspectionService QualityInspections(ScmDbContext context, ICurrentUserService? user = null)
+    {
+        var actor = user ?? DefaultUser;
+        return new QualityInspectionService(
+            context,
+            DocumentNumbers(context),
+            Posting(context),
+            actor,
+            new AuditTrail(context, actor),
+            NullLogger<QualityInspectionService>.Instance);
+    }
+
+    public static NcrService Ncrs(ScmDbContext context, ICurrentUserService? user = null)
+    {
+        var actor = user ?? DefaultUser;
+        return new NcrService(
+            context,
+            DocumentNumbers(context),
+            Posting(context),
+            actor,
+            new AuditTrail(context, actor),
+            NullLogger<NcrService>.Instance);
+    }
+
+    public static SupplierScorecardService SupplierScorecards(ScmDbContext context)
+        => new(context, NullLogger<SupplierScorecardService>.Instance);
+
+    public static AllocationService Allocation(ScmDbContext context)
+        => new(context, NullLogger<AllocationService>.Instance);
+
+    public static DisposalService Disposals(ScmDbContext context, ICurrentUserService? user = null)
+    {
+        var actor = user ?? DefaultUser;
+        var docNumbers = DocumentNumbers(context);
+        var postingService = new StockPostingService(
+            context,
+            actor,
+            new LotCodeGenerator(context, docNumbers),
+            new LocationResolver(context),
+            new StatusTransitionGuard());
+
+        return new DisposalService(
+            context,
+            postingService,
+            Posting(context),
+            docNumbers,
+            actor,
+            new AuditTrail(context, actor),
+            NullLogger<DisposalService>.Instance);
     }
 
     public static AuditTrail Audit(ScmDbContext context, ICurrentUserService? user = null)

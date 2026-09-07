@@ -15,6 +15,7 @@ public class CreateProductionBatchRequest
 public class ProductionBatchResponse
 {
     public int BatchId { get; set; }
+    public string BatchNumber { get; set; } = string.Empty;
     public int RecipeId { get; set; }
     public string RecipeName { get; set; } = string.Empty;
     public int ProductId { get; set; }

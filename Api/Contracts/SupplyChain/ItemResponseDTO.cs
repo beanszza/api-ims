@@ -3,6 +3,7 @@ namespace api_scm.Contracts.Responses;
 public class ItemResponse
 {
     public int ItemId { get; set; }
+    public string ItemCode { get; set; } = string.Empty;
     public int UomId { get; set; }
     public int CategoryId { get; set; }
     public string ItemName { get; set; } = string.Empty;

@@ -166,12 +166,34 @@ public static class TestDataSeeder
     /// <summary>Adds an on-hand balance for an item at a location.</summary>
     public static async Task GiveStockAsync(ScmDbContext context, int itemId, int locationId, int quantity)
     {
+        var item = await context.Items.FindAsync(itemId);
+        var uomId = item?.StockUomId ?? item?.UomId ?? 1;
+        var supplier = await context.Suppliers.FirstOrDefaultAsync();
+        var supplierId = supplier?.SupplierId;
+
         context.Inventories.Add(new Inventory
         {
             ItemId = itemId,
             LocationId = locationId,
             CurrentStock = quantity
         });
+
+        context.InventoryLots.Add(new InventoryLot
+        {
+            LotCode = $"LOT-SEED-{Guid.NewGuid():N}"[..18],
+            ItemId = itemId,
+            LocationId = locationId,
+            QuantityReceived = quantity,
+            QuantityRemaining = quantity,
+            UomId = uomId,
+            UnitCost = 50m,
+            SourceType = LotSourceType.Purchased,
+            SupplierId = supplierId,
+            Status = LotStatus.Available,
+            ReceivedDate = DateTime.UtcNow,
+            ExpiryDate = DateOnly.FromDateTime(DateTime.Today.AddYears(1))
+        });
+
         await context.SaveChangesAsync();
     }
 
@@ -182,15 +204,19 @@ public static class TestDataSeeder
         int quantity,
         PurchaseOrderStatus status = PurchaseOrderStatus.Pending)
     {
+        var item = await context.Items.FindAsync(itemId);
+        var uomId = item?.StockUomId ?? item?.UomId ?? 1;
+
         var order = new PurchaseOrder
         {
+            PoNumber = $"PO-{DateTime.UtcNow:yyyyMMdd}-{Guid.NewGuid():N}"[..20],
             SupplierId = supplierId,
-            OrderDate = DateTime.UtcNow,
-            ExpectedArrivalDate = DateTime.UtcNow.AddDays(3),
+            OrderDate = DateTime.UtcNow.AddDays(-1),
+            ExpectedArrivalDate = DateTime.UtcNow.AddDays(2),
             Status = status,
             PaymentType = "Cash",
             ProofImageUrl = string.Empty,
-            TotalAmount = 0m,
+            TotalAmount = quantity * 10m,
             PurchaseOrderItems =
             [
                 new PurchaseOrderItem
@@ -198,6 +224,8 @@ public static class TestDataSeeder
                     ItemId = itemId,
                     SupplierId = supplierId,
                     PoItemQuantity = quantity,
+                    PurchaseUomId = uomId,
+                    UnitPrice = 10m,
                     ReceivedQuantity = 0
                 }
             ]

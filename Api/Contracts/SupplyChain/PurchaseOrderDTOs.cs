@@ -16,6 +16,8 @@ namespace api_scm.Contracts.Requests
     {
         public int ItemId { get; set; }
         public decimal PoItemQuantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public int? PurchaseUomId { get; set; }
     }
 
     public class UpdateOrderStatusRequest
@@ -70,6 +72,10 @@ namespace api_scm.Contracts.Responses
         public string ItemName { get; set; } = string.Empty;
         public decimal PoItemQuantity { get; set; }
         public decimal ReceivedQuantity { get; set; }
+        public decimal UnitPrice { get; set; }
+        public int PurchaseUomId { get; set; }
+        public string PurchaseUomName { get; set; } = string.Empty;
+        public decimal LineTotal => PoItemQuantity * UnitPrice;
     }
 
     public class TransactionHistoryResponse

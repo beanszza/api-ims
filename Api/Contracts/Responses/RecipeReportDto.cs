@@ -12,7 +12,7 @@ public class RecipeReportItemDto
     public int RecipeNo { get; set; }
     public string RecipeName { get; set; } = string.Empty;
     public string FinishedProduct { get; set; } = string.Empty;
-    public double TargetYield { get; set; }
+    public decimal TargetYield { get; set; }
     public int IngredientsCount { get; set; }
     public string Status { get; set; } = string.Empty;
 }

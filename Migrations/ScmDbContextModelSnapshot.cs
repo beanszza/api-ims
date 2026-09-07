@@ -22,6 +22,70 @@ namespace api_scm.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Domains.Entities.ApprovalRequest", b =>
+                {
+                    b.Property<int>("ApprovalRequestId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("ApprovalRequestId"));
+
+                    b.Property<DateTime?>("ActionAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("ApproverId")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ApproverName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Comments")
+                        .HasColumnType("text");
+
+                    b.Property<string>("DocumentNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("EntityId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("EntityType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("RequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("ApprovalRequestId");
+
+                    b.HasIndex("RequestedAt")
+                        .HasDatabaseName("IX_ApprovalRequests_RequestedAt");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("IX_ApprovalRequests_Status");
+
+                    b.HasIndex("EntityType", "EntityId")
+                        .HasDatabaseName("IX_ApprovalRequests_Entity");
+
+                    b.ToTable("ApprovalRequests");
+                });
+
             modelBuilder.Entity("Domains.Entities.AuditLog", b =>
                 {
                     b.Property<int>("LogId")
@@ -84,11 +148,25 @@ namespace api_scm.Migrations
                     b.Property<int>("ItemId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("LotId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("QuantityUsed")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
                     b.Property<decimal>("RequiredQuantity")
                         .HasPrecision(18, 3)
                         .HasColumnType("numeric(18,3)");
 
-                    b.Property<int>("SourceSupplierId")
+                    b.Property<int?>("SourceSupplierId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<int?>("UomId")
                         .HasColumnType("integer");
 
                     b.HasKey("BatchConsumptionId");
@@ -97,9 +175,186 @@ namespace api_scm.Migrations
 
                     b.HasIndex("ItemId");
 
+                    b.HasIndex("LotId");
+
                     b.HasIndex("SourceSupplierId");
 
+                    b.HasIndex("UomId");
+
                     b.ToTable("BatchConsumptions");
+                });
+
+            modelBuilder.Entity("Domains.Entities.BranchRequest", b =>
+                {
+                    b.Property<int>("BranchRequestId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("BranchRequestId"));
+
+                    b.Property<string>("ApprovedBy")
+                        .HasColumnType("text");
+
+                    b.Property<int>("BranchId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("RequestDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RequestNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("RequiredDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("BranchRequestId");
+
+                    b.HasIndex("BranchId");
+
+                    b.HasIndex("RequestNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_BranchRequests_RequestNumber");
+
+                    b.ToTable("BranchRequests");
+                });
+
+            modelBuilder.Entity("Domains.Entities.BranchRequestItem", b =>
+                {
+                    b.Property<int>("BranchRequestItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("BranchRequestItemId"));
+
+                    b.Property<decimal>("ApprovedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<int>("BranchRequestId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("DispatchedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("ReceivedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<decimal>("RequestedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.HasKey("BranchRequestItemId");
+
+                    b.HasIndex("BranchRequestId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("BranchRequestItems");
+                });
+
+            modelBuilder.Entity("Domains.Entities.BranchReturn", b =>
+                {
+                    b.Property<int>("BranchReturnId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("BranchReturnId"));
+
+                    b.Property<string>("AuthorizedBy")
+                        .HasColumnType("text");
+
+                    b.Property<int>("BranchId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("ReturnDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ReturnNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReturnedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("BranchReturnId");
+
+                    b.HasIndex("BranchId");
+
+                    b.HasIndex("ReturnNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_BranchReturns_ReturnNumber");
+
+                    b.ToTable("BranchReturns");
+                });
+
+            modelBuilder.Entity("Domains.Entities.BranchReturnItem", b =>
+                {
+                    b.Property<int>("BranchReturnItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("BranchReturnItemId"));
+
+                    b.Property<int>("BranchReturnId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("DefectCondition")
+                        .HasColumnType("text");
+
+                    b.Property<int?>("LotId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<int>("ProductId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("ReturnedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.HasKey("BranchReturnItemId");
+
+                    b.HasIndex("BranchReturnId");
+
+                    b.HasIndex("LotId");
+
+                    b.HasIndex("ProductId");
+
+                    b.ToTable("BranchReturnItems");
                 });
 
             modelBuilder.Entity("Domains.Entities.Category", b =>
@@ -121,6 +376,191 @@ namespace api_scm.Migrations
                     b.HasKey("CategoryId");
 
                     b.ToTable("Categories");
+                });
+
+            modelBuilder.Entity("Domains.Entities.CycleCount", b =>
+                {
+                    b.Property<int>("CycleCountId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("CycleCountId"));
+
+                    b.Property<DateTime>("CountDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CountNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("CountedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("LocationId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReconciledBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ReconciledDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("TotalCountedValue")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal>("TotalSystemValue")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal>("TotalVarianceValue")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.HasKey("CycleCountId");
+
+                    b.HasIndex("CountNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_CycleCounts_CountNumber");
+
+                    b.HasIndex("LocationId");
+
+                    b.ToTable("CycleCounts");
+                });
+
+            modelBuilder.Entity("Domains.Entities.CycleCountItem", b =>
+                {
+                    b.Property<int>("CycleCountItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("CycleCountItemId"));
+
+                    b.Property<decimal>("CountedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<int>("CycleCountId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("LotId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Reason")
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("SystemQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.HasKey("CycleCountItemId");
+
+                    b.HasIndex("CycleCountId");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("LotId");
+
+                    b.ToTable("CycleCountItems");
+                });
+
+            modelBuilder.Entity("Domains.Entities.DisposalRecord", b =>
+                {
+                    b.Property<int>("DisposalId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("DisposalId"));
+
+                    b.Property<string>("AuthorizedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("DisposalDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DisposalNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("TotalCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("WitnessName")
+                        .HasColumnType("text");
+
+                    b.HasKey("DisposalId");
+
+                    b.HasIndex("DisposalNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_DisposalRecords_DisposalNumber");
+
+                    b.ToTable("DisposalRecords");
+                });
+
+            modelBuilder.Entity("Domains.Entities.DisposalRecordItem", b =>
+                {
+                    b.Property<int>("DisposalItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("DisposalItemId"));
+
+                    b.Property<int>("DisposalId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("LotId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("QuantityDisposed")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.HasKey("DisposalItemId");
+
+                    b.HasIndex("DisposalId");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("LotId");
+
+                    b.ToTable("DisposalRecordItems");
                 });
 
             modelBuilder.Entity("Domains.Entities.DocumentSequence", b =>
@@ -197,6 +637,119 @@ namespace api_scm.Migrations
                     b.HasIndex("ItemId");
 
                     b.ToTable("FinishedProducts");
+                });
+
+            modelBuilder.Entity("Domains.Entities.GoodsReceipt", b =>
+                {
+                    b.Property<int>("GrnId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("GrnId"));
+
+                    b.Property<string>("Carrier")
+                        .HasColumnType("text");
+
+                    b.Property<string>("DeliveryNoteNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("GrnNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<int>("PoId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReceivedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("ReceivedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ReceivingLocationId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("GrnId");
+
+                    b.HasIndex("GrnNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_GoodsReceipts_GrnNumber");
+
+                    b.HasIndex("PoId")
+                        .HasDatabaseName("IX_GoodsReceipts_PoId");
+
+                    b.HasIndex("ReceivingLocationId");
+
+                    b.HasIndex("SupplierId");
+
+                    b.ToTable("GoodsReceipts");
+                });
+
+            modelBuilder.Entity("Domains.Entities.GoodsReceiptItem", b =>
+                {
+                    b.Property<int>("GrnItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("GrnItemId"));
+
+                    b.Property<decimal>("DeliveredQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<DateOnly?>("ExpiryDate")
+                        .HasColumnType("date");
+
+                    b.Property<int>("GrnId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("LotId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateOnly?>("ManufactureDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("OrderedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<int>("PoItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PurchaseUomId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SupplierLotCode")
+                        .HasColumnType("text");
+
+                    b.HasKey("GrnItemId");
+
+                    b.HasIndex("GrnId");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("LotId");
+
+                    b.HasIndex("PoItemId");
+
+                    b.HasIndex("PurchaseUomId");
+
+                    b.ToTable("GoodsReceiptItems");
                 });
 
             modelBuilder.Entity("Domains.Entities.Inventory", b =>
@@ -409,6 +962,10 @@ namespace api_scm.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("boolean");
 
+                    b.Property<string>("ItemCode")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("ItemName")
                         .IsRequired()
                         .HasColumnType("text");
@@ -483,6 +1040,82 @@ namespace api_scm.Migrations
                     b.ToTable("Locations");
                 });
 
+            modelBuilder.Entity("Domains.Entities.NonConformanceReport", b =>
+                {
+                    b.Property<int>("NcrId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("NcrId"));
+
+                    b.Property<string>("CorrectiveAction")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("DefectType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("DefectiveQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<int?>("InspectionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("LotId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("NcrNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ResolvedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ResolvedBy")
+                        .HasColumnType("text");
+
+                    b.Property<string>("RootCause")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Severity")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("NcrId");
+
+                    b.HasIndex("InspectionId");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("LotId");
+
+                    b.HasIndex("NcrNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_NonConformanceReports_NcrNumber");
+
+                    b.HasIndex("SupplierId");
+
+                    b.ToTable("NonConformanceReports");
+                });
+
             modelBuilder.Entity("Domains.Entities.ProductionBatch", b =>
                 {
                     b.Property<int>("BatchId")
@@ -503,9 +1136,19 @@ namespace api_scm.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("numeric(18,3)");
 
+                    b.Property<string>("BatchNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("CompletedDate")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<decimal>("EstimatedQuantity")
                         .HasPrecision(18, 3)
                         .HasColumnType("numeric(18,3)");
+
+                    b.Property<int?>("FgLotId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("ImageUrl")
                         .IsRequired()
@@ -532,6 +1175,13 @@ namespace api_scm.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<decimal>("ScrapQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<string>("ScrapReason")
+                        .HasColumnType("text");
+
                     b.Property<string>("Stage")
                         .IsRequired()
                         .HasColumnType("text");
@@ -540,7 +1190,21 @@ namespace api_scm.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<decimal>("TotalMaterialCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal>("UnitCost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<decimal>("YieldPercentage")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
                     b.HasKey("BatchId");
+
+                    b.HasIndex("FgLotId");
 
                     b.HasIndex("ProductId");
 
@@ -595,7 +1259,8 @@ namespace api_scm.Migrations
                         .HasColumnType("integer");
 
                     b.Property<decimal>("TotalAmount")
-                        .HasColumnType("numeric");
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
 
                     b.HasKey("PoId");
 
@@ -628,6 +1293,9 @@ namespace api_scm.Migrations
                     b.Property<int?>("PurchaseOrderPoId")
                         .HasColumnType("integer");
 
+                    b.Property<int>("PurchaseUomId")
+                        .HasColumnType("integer");
+
                     b.Property<decimal>("ReceivedQuantity")
                         .HasPrecision(18, 3)
                         .HasColumnType("numeric(18,3)");
@@ -635,15 +1303,281 @@ namespace api_scm.Migrations
                     b.Property<int>("SupplierId")
                         .HasColumnType("integer");
 
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
                     b.HasKey("PoItemId");
 
                     b.HasIndex("ItemId");
 
                     b.HasIndex("PurchaseOrderPoId");
 
+                    b.HasIndex("PurchaseUomId");
+
                     b.HasIndex("SupplierId");
 
                     b.ToTable("PurchaseOrderItems");
+                });
+
+            modelBuilder.Entity("Domains.Entities.PurchaseRequisition", b =>
+                {
+                    b.Property<int>("PrId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("PrId"));
+
+                    b.Property<string>("Department")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("EstimatedTotalAmount")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<string>("GeneratedPoNumbers")
+                        .HasColumnType("text");
+
+                    b.Property<string>("PrNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Purpose")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("RequestDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("RequestedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("RequiredDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("PrId");
+
+                    b.HasIndex("PrNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_PurchaseRequisitions_PrNumber");
+
+                    b.HasIndex("Status")
+                        .HasDatabaseName("IX_PurchaseRequisitions_Status");
+
+                    b.ToTable("PurchaseRequisitions");
+                });
+
+            modelBuilder.Entity("Domains.Entities.PurchaseRequisitionItem", b =>
+                {
+                    b.Property<int>("PrItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("PrItemId"));
+
+                    b.Property<decimal>("EstimatedUnitPrice")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PrId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PurchaseUomId")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("RequestedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<int?>("SuggestedSupplierId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("PrItemId");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("PrId");
+
+                    b.HasIndex("PurchaseUomId");
+
+                    b.HasIndex("SuggestedSupplierId");
+
+                    b.ToTable("PurchaseRequisitionItems");
+                });
+
+            modelBuilder.Entity("Domains.Entities.QualityInspection", b =>
+                {
+                    b.Property<int>("InspectionId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("InspectionId"));
+
+                    b.Property<DateTime>("InspectionDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("InspectionNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("InspectionType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("InspectorId")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("InspectorName")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("OverallNotes")
+                        .HasColumnType("text");
+
+                    b.Property<int>("ReferenceId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ReferenceNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("ReferenceType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.HasKey("InspectionId");
+
+                    b.HasIndex("InspectionNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_QualityInspections_InspectionNumber");
+
+                    b.HasIndex("ReferenceType", "ReferenceId")
+                        .HasDatabaseName("IX_QualityInspections_Reference");
+
+                    b.ToTable("QualityInspections");
+                });
+
+            modelBuilder.Entity("Domains.Entities.QualityInspectionItem", b =>
+                {
+                    b.Property<int>("InspectionItemId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("InspectionItemId"));
+
+                    b.Property<decimal>("AcceptedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<decimal>("ConcessionQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<string>("DefectReason")
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("DeliveredQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<int>("InspectionId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("LotId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("RejectedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.HasKey("InspectionItemId");
+
+                    b.HasIndex("InspectionId");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("LotId");
+
+                    b.ToTable("QualityInspectionItems");
+                });
+
+            modelBuilder.Entity("Domains.Entities.RecallRecord", b =>
+                {
+                    b.Property<int>("RecallId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("RecallId"));
+
+                    b.Property<string>("AffectedSummaryJson")
+                        .HasColumnType("text");
+
+                    b.Property<int>("BranchesAffectedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CompletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("InitiatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("InitiatedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("RecallNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Scope")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("TargetLotCode")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("TotalUnitsAffected")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.HasKey("RecallId");
+
+                    b.HasIndex("RecallNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_RecallRecords_RecallNumber");
+
+                    b.ToTable("RecallRecords");
                 });
 
             modelBuilder.Entity("Domains.Entities.Recipe", b =>
@@ -661,19 +1595,36 @@ namespace api_scm.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
-                    b.Property<int>("OutputQuantity")
-                        .HasColumnType("integer");
+                    b.Property<decimal>("OutputQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
 
                     b.Property<int>("ProductId")
                         .HasColumnType("integer");
+
+                    b.Property<string>("RecipeCode")
+                        .IsRequired()
+                        .HasColumnType("text");
 
                     b.Property<string>("RecipeName")
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("Version")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("YieldUomId")
+                        .HasColumnType("integer");
+
                     b.HasKey("RecipeId");
 
                     b.HasIndex("ProductId");
+
+                    b.HasIndex("YieldUomId");
 
                     b.ToTable("Recipes");
                 });
@@ -708,6 +1659,72 @@ namespace api_scm.Migrations
                     b.HasIndex("UomId");
 
                     b.ToTable("RecipeIngredients");
+                });
+
+            modelBuilder.Entity("Domains.Entities.ReturnToVendor", b =>
+                {
+                    b.Property<int>("RtvId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("RtvId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("CreditNoteNumber")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("DispatchedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("LotId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("NcrId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("ReturnedQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<string>("RtvNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("RtvId");
+
+                    b.HasIndex("ItemId");
+
+                    b.HasIndex("LotId");
+
+                    b.HasIndex("NcrId");
+
+                    b.HasIndex("RtvNumber")
+                        .IsUnique()
+                        .HasDatabaseName("IX_ReturnToVendors_RtvNumber");
+
+                    b.HasIndex("SupplierId");
+
+                    b.ToTable("ReturnToVendors");
                 });
 
             modelBuilder.Entity("Domains.Entities.StockLedger", b =>
@@ -799,11 +1816,26 @@ namespace api_scm.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("TransferId"));
 
+                    b.Property<int?>("BranchRequestId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("DestLocationId")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("DispatchedDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DriverName")
+                        .HasColumnType("text");
+
                     b.Property<int>("ProductId")
                         .HasColumnType("integer");
+
+                    b.Property<string>("ReceivedBy")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("ReceivedDate")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("SourceLocationId")
                         .HasColumnType("integer");
@@ -815,11 +1847,20 @@ namespace api_scm.Migrations
                     b.Property<DateTime>("TransferDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("TransferNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<decimal>("TransferQuantity")
                         .HasPrecision(18, 3)
                         .HasColumnType("numeric(18,3)");
 
+                    b.Property<string>("VehiclePlate")
+                        .HasColumnType("text");
+
                     b.HasKey("TransferId");
+
+                    b.HasIndex("BranchRequestId");
 
                     b.HasIndex("DestLocationId");
 
@@ -861,12 +1902,140 @@ namespace api_scm.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<string>("SupplierCode")
+                        .IsRequired()
+                        .HasColumnType("text");
+
                     b.Property<string>("Website")
                         .HasColumnType("text");
 
                     b.HasKey("SupplierId");
 
                     b.ToTable("Suppliers");
+                });
+
+            modelBuilder.Entity("Domains.Entities.SupplierDocument", b =>
+                {
+                    b.Property<int>("DocumentId")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("DocumentId"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DocumentNumber")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("DocumentType")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateOnly?>("ExpiryDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("FileUrl")
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsVerified")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateOnly>("IssueDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("VerifiedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("VerifiedBy")
+                        .HasColumnType("text");
+
+                    b.HasKey("DocumentId");
+
+                    b.HasIndex("ExpiryDate")
+                        .HasDatabaseName("IX_SupplierDocuments_ExpiryDate");
+
+                    b.HasIndex("SupplierId", "DocumentType")
+                        .HasDatabaseName("IX_SupplierDocuments_Supplier_Type");
+
+                    b.ToTable("SupplierDocuments");
+                });
+
+            modelBuilder.Entity("Domains.Entities.SupplierItem", b =>
+                {
+                    b.Property<int>("SupplierId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("ItemId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Currency")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsPreferred")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LastPurchaseDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("LastPurchasePrice")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.Property<int>("LeadTimeDays")
+                        .HasColumnType("integer");
+
+                    b.Property<decimal>("MinOrderQuantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<decimal>("PackSize")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("numeric(18,3)");
+
+                    b.Property<int>("PurchaseUomId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SupplierItemName")
+                        .HasColumnType("text");
+
+                    b.Property<string>("SupplierSku")
+                        .HasColumnType("text");
+
+                    b.Property<decimal>("UnitPrice")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("numeric(18,4)");
+
+                    b.HasKey("SupplierId", "ItemId");
+
+                    b.HasIndex("ItemId")
+                        .HasDatabaseName("IX_SupplierItems_ItemId");
+
+                    b.HasIndex("PurchaseUomId");
+
+                    b.ToTable("SupplierItems", t =>
+                        {
+                            t.HasCheckConstraint("CK_SupplierItems_MinOrderQuantity_Positive", "\"MinOrderQuantity\" > 0");
+
+                            t.HasCheckConstraint("CK_SupplierItems_PackSize_Positive", "\"PackSize\" > 0");
+
+                            t.HasCheckConstraint("CK_SupplierItems_UnitPrice_Positive", "\"UnitPrice\" >= 0");
+                        });
                 });
 
             modelBuilder.Entity("Domains.Entities.UnitOfMeasure", b =>
@@ -927,17 +2096,161 @@ namespace api_scm.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Domains.Entities.InventoryLot", "Lot")
+                        .WithMany()
+                        .HasForeignKey("LotId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Domains.Entities.Supplier", "SourceSupplier")
                         .WithMany("SourcedBatchConsumptions")
                         .HasForeignKey("SourceSupplierId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("Domains.Entities.UnitOfMeasure", "Uom")
+                        .WithMany()
+                        .HasForeignKey("UomId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Batch");
 
                     b.Navigation("Item");
 
+                    b.Navigation("Lot");
+
                     b.Navigation("SourceSupplier");
+
+                    b.Navigation("Uom");
+                });
+
+            modelBuilder.Entity("Domains.Entities.BranchRequest", b =>
+                {
+                    b.HasOne("Domains.Entities.Location", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Branch");
+                });
+
+            modelBuilder.Entity("Domains.Entities.BranchRequestItem", b =>
+                {
+                    b.HasOne("Domains.Entities.BranchRequest", "BranchRequest")
+                        .WithMany("Items")
+                        .HasForeignKey("BranchRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.FinishedProduct", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("BranchRequest");
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("Domains.Entities.BranchReturn", b =>
+                {
+                    b.HasOne("Domains.Entities.Location", "Branch")
+                        .WithMany()
+                        .HasForeignKey("BranchId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Branch");
+                });
+
+            modelBuilder.Entity("Domains.Entities.BranchReturnItem", b =>
+                {
+                    b.HasOne("Domains.Entities.BranchReturn", "BranchReturn")
+                        .WithMany("Items")
+                        .HasForeignKey("BranchReturnId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.InventoryLot", "Lot")
+                        .WithMany()
+                        .HasForeignKey("LotId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Domains.Entities.FinishedProduct", "Product")
+                        .WithMany()
+                        .HasForeignKey("ProductId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("BranchReturn");
+
+                    b.Navigation("Lot");
+
+                    b.Navigation("Product");
+                });
+
+            modelBuilder.Entity("Domains.Entities.CycleCount", b =>
+                {
+                    b.HasOne("Domains.Entities.Location", "Location")
+                        .WithMany()
+                        .HasForeignKey("LocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Location");
+                });
+
+            modelBuilder.Entity("Domains.Entities.CycleCountItem", b =>
+                {
+                    b.HasOne("Domains.Entities.CycleCount", "CycleCount")
+                        .WithMany("Items")
+                        .HasForeignKey("CycleCountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.InventoryLot", "Lot")
+                        .WithMany()
+                        .HasForeignKey("LotId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("CycleCount");
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Lot");
+                });
+
+            modelBuilder.Entity("Domains.Entities.DisposalRecordItem", b =>
+                {
+                    b.HasOne("Domains.Entities.DisposalRecord", "DisposalRecord")
+                        .WithMany("Items")
+                        .HasForeignKey("DisposalId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.InventoryLot", "Lot")
+                        .WithMany()
+                        .HasForeignKey("LotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("DisposalRecord");
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Lot");
                 });
 
             modelBuilder.Entity("Domains.Entities.FinishedProduct", b =>
@@ -949,6 +2262,75 @@ namespace api_scm.Migrations
                         .IsRequired();
 
                     b.Navigation("Item");
+                });
+
+            modelBuilder.Entity("Domains.Entities.GoodsReceipt", b =>
+                {
+                    b.HasOne("Domains.Entities.PurchaseOrder", "PurchaseOrder")
+                        .WithMany()
+                        .HasForeignKey("PoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.Location", "ReceivingLocation")
+                        .WithMany()
+                        .HasForeignKey("ReceivingLocationId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("PurchaseOrder");
+
+                    b.Navigation("ReceivingLocation");
+
+                    b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("Domains.Entities.GoodsReceiptItem", b =>
+                {
+                    b.HasOne("Domains.Entities.GoodsReceipt", "GoodsReceipt")
+                        .WithMany("Items")
+                        .HasForeignKey("GrnId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.InventoryLot", "Lot")
+                        .WithMany()
+                        .HasForeignKey("LotId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Domains.Entities.PurchaseOrderItem", "PurchaseOrderItem")
+                        .WithMany()
+                        .HasForeignKey("PoItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.UnitOfMeasure", "PurchaseUom")
+                        .WithMany()
+                        .HasForeignKey("PurchaseUomId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("GoodsReceipt");
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Lot");
+
+                    b.Navigation("PurchaseOrderItem");
+
+                    b.Navigation("PurchaseUom");
                 });
 
             modelBuilder.Entity("Domains.Entities.Inventory", b =>
@@ -1066,8 +2448,46 @@ namespace api_scm.Migrations
                     b.Navigation("ParentLocation");
                 });
 
+            modelBuilder.Entity("Domains.Entities.NonConformanceReport", b =>
+                {
+                    b.HasOne("Domains.Entities.QualityInspection", "Inspection")
+                        .WithMany()
+                        .HasForeignKey("InspectionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Domains.Entities.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.InventoryLot", "Lot")
+                        .WithMany()
+                        .HasForeignKey("LotId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("Domains.Entities.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Inspection");
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Lot");
+
+                    b.Navigation("Supplier");
+                });
+
             modelBuilder.Entity("Domains.Entities.ProductionBatch", b =>
                 {
+                    b.HasOne("Domains.Entities.InventoryLot", "FgLot")
+                        .WithMany()
+                        .HasForeignKey("FgLotId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("Domains.Entities.FinishedProduct", "Product")
                         .WithMany("ProductionBatches")
                         .HasForeignKey("ProductId")
@@ -1079,6 +2499,8 @@ namespace api_scm.Migrations
                         .HasForeignKey("RecipeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("FgLot");
 
                     b.Navigation("Product");
 
@@ -1108,6 +2530,12 @@ namespace api_scm.Migrations
                         .WithMany("PurchaseOrderItems")
                         .HasForeignKey("PurchaseOrderPoId");
 
+                    b.HasOne("Domains.Entities.UnitOfMeasure", "PurchaseUom")
+                        .WithMany()
+                        .HasForeignKey("PurchaseUomId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Domains.Entities.Supplier", "Supplier")
                         .WithMany("PurchaseOrderItems")
                         .HasForeignKey("SupplierId")
@@ -1118,7 +2546,69 @@ namespace api_scm.Migrations
 
                     b.Navigation("PurchaseOrder");
 
+                    b.Navigation("PurchaseUom");
+
                     b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("Domains.Entities.PurchaseRequisitionItem", b =>
+                {
+                    b.HasOne("Domains.Entities.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.PurchaseRequisition", "PurchaseRequisition")
+                        .WithMany("Items")
+                        .HasForeignKey("PrId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.UnitOfMeasure", "PurchaseUom")
+                        .WithMany()
+                        .HasForeignKey("PurchaseUomId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.Supplier", "SuggestedSupplier")
+                        .WithMany()
+                        .HasForeignKey("SuggestedSupplierId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Item");
+
+                    b.Navigation("PurchaseRequisition");
+
+                    b.Navigation("PurchaseUom");
+
+                    b.Navigation("SuggestedSupplier");
+                });
+
+            modelBuilder.Entity("Domains.Entities.QualityInspectionItem", b =>
+                {
+                    b.HasOne("Domains.Entities.QualityInspection", "QualityInspection")
+                        .WithMany("Items")
+                        .HasForeignKey("InspectionId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.InventoryLot", "Lot")
+                        .WithMany()
+                        .HasForeignKey("LotId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Lot");
+
+                    b.Navigation("QualityInspection");
                 });
 
             modelBuilder.Entity("Domains.Entities.Recipe", b =>
@@ -1129,7 +2619,14 @@ namespace api_scm.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Domains.Entities.UnitOfMeasure", "YieldUom")
+                        .WithMany()
+                        .HasForeignKey("YieldUomId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.Navigation("Product");
+
+                    b.Navigation("YieldUom");
                 });
 
             modelBuilder.Entity("Domains.Entities.RecipeIngredient", b =>
@@ -1157,6 +2654,40 @@ namespace api_scm.Migrations
                     b.Navigation("Recipe");
 
                     b.Navigation("Uom");
+                });
+
+            modelBuilder.Entity("Domains.Entities.ReturnToVendor", b =>
+                {
+                    b.HasOne("Domains.Entities.Item", "Item")
+                        .WithMany()
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.InventoryLot", "Lot")
+                        .WithMany()
+                        .HasForeignKey("LotId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.NonConformanceReport", "NonConformanceReport")
+                        .WithMany()
+                        .HasForeignKey("NcrId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Domains.Entities.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+
+                    b.Navigation("Lot");
+
+                    b.Navigation("NonConformanceReport");
+
+                    b.Navigation("Supplier");
                 });
 
             modelBuilder.Entity("Domains.Entities.StockLedger", b =>
@@ -1195,6 +2726,10 @@ namespace api_scm.Migrations
 
             modelBuilder.Entity("Domains.Entities.StockTransfer", b =>
                 {
+                    b.HasOne("Domains.Entities.BranchRequest", "BranchRequest")
+                        .WithMany()
+                        .HasForeignKey("BranchRequestId");
+
                     b.HasOne("Domains.Entities.Location", "DestLocation")
                         .WithMany()
                         .HasForeignKey("DestLocationId")
@@ -1213,11 +2748,51 @@ namespace api_scm.Migrations
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("BranchRequest");
+
                     b.Navigation("DestLocation");
 
                     b.Navigation("Product");
 
                     b.Navigation("SourceLocation");
+                });
+
+            modelBuilder.Entity("Domains.Entities.SupplierDocument", b =>
+                {
+                    b.HasOne("Domains.Entities.Supplier", "Supplier")
+                        .WithMany("SupplierDocuments")
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("Domains.Entities.SupplierItem", b =>
+                {
+                    b.HasOne("Domains.Entities.Item", "Item")
+                        .WithMany("SupplierItems")
+                        .HasForeignKey("ItemId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.UnitOfMeasure", "PurchaseUom")
+                        .WithMany()
+                        .HasForeignKey("PurchaseUomId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Domains.Entities.Supplier", "Supplier")
+                        .WithMany("SupplierItems")
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Item");
+
+                    b.Navigation("PurchaseUom");
+
+                    b.Navigation("Supplier");
                 });
 
             modelBuilder.Entity("Domains.Entities.UnitOfMeasure", b =>
@@ -1230,7 +2805,27 @@ namespace api_scm.Migrations
                     b.Navigation("BaseUom");
                 });
 
+            modelBuilder.Entity("Domains.Entities.BranchRequest", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Domains.Entities.BranchReturn", b =>
+                {
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("Domains.Entities.Category", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Domains.Entities.CycleCount", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Domains.Entities.DisposalRecord", b =>
                 {
                     b.Navigation("Items");
                 });
@@ -1249,6 +2844,11 @@ namespace api_scm.Migrations
                     b.Navigation("StockTransfers");
                 });
 
+            modelBuilder.Entity("Domains.Entities.GoodsReceipt", b =>
+                {
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("Domains.Entities.Item", b =>
                 {
                     b.Navigation("BatchConsumptions");
@@ -1262,6 +2862,8 @@ namespace api_scm.Migrations
                     b.Navigation("PurchaseOrderItems");
 
                     b.Navigation("RecipeIngredients");
+
+                    b.Navigation("SupplierItems");
                 });
 
             modelBuilder.Entity("Domains.Entities.Location", b =>
@@ -1281,6 +2883,16 @@ namespace api_scm.Migrations
                     b.Navigation("PurchaseOrderItems");
                 });
 
+            modelBuilder.Entity("Domains.Entities.PurchaseRequisition", b =>
+                {
+                    b.Navigation("Items");
+                });
+
+            modelBuilder.Entity("Domains.Entities.QualityInspection", b =>
+                {
+                    b.Navigation("Items");
+                });
+
             modelBuilder.Entity("Domains.Entities.Recipe", b =>
                 {
                     b.Navigation("ProductionBatches");
@@ -1295,6 +2907,10 @@ namespace api_scm.Migrations
                     b.Navigation("PurchaseOrders");
 
                     b.Navigation("SourcedBatchConsumptions");
+
+                    b.Navigation("SupplierDocuments");
+
+                    b.Navigation("SupplierItems");
                 });
 
             modelBuilder.Entity("Domains.Entities.UnitOfMeasure", b =>

@@ -19,8 +19,19 @@ public class ScmDbContext : DbContext
 
     // --- PURCHASING & SUPPLIERS ---
     public DbSet<Supplier> Suppliers { get; set; }
+    public DbSet<SupplierItem> SupplierItems { get; set; }
+    public DbSet<SupplierDocument> SupplierDocuments { get; set; }
+    public DbSet<ApprovalRequest> ApprovalRequests { get; set; }
+    public DbSet<PurchaseRequisition> PurchaseRequisitions { get; set; }
+    public DbSet<PurchaseRequisitionItem> PurchaseRequisitionItems { get; set; }
     public DbSet<PurchaseOrder> PurchaseOrders { get; set; }
     public DbSet<PurchaseOrderItem> PurchaseOrderItems { get; set; }
+    public DbSet<GoodsReceipt> GoodsReceipts { get; set; }
+    public DbSet<GoodsReceiptItem> GoodsReceiptItems { get; set; }
+    public DbSet<QualityInspection> QualityInspections { get; set; }
+    public DbSet<QualityInspectionItem> QualityInspectionItems { get; set; }
+    public DbSet<NonConformanceReport> NonConformanceReports { get; set; }
+    public DbSet<ReturnToVendor> ReturnToVendors { get; set; }
 
     // --- PRODUCTION & MANUFACTURING ---
     public DbSet<Recipe> Recipes { get; set; }
@@ -36,6 +47,15 @@ public class ScmDbContext : DbContext
     public DbSet<Inventory> Inventories { get; set; }
     public DbSet<StockTransfer> StockTransfers { get; set; }
     public DbSet<InventoryMovementLog> InventoryMovementLogs { get; set; }
+    public DbSet<DisposalRecord> DisposalRecords { get; set; }
+    public DbSet<DisposalRecordItem> DisposalRecordItems { get; set; }
+    public DbSet<BranchRequest> BranchRequests { get; set; }
+    public DbSet<BranchRequestItem> BranchRequestItems { get; set; }
+    public DbSet<BranchReturn> BranchReturns { get; set; }
+    public DbSet<BranchReturnItem> BranchReturnItems { get; set; }
+    public DbSet<RecallRecord> RecallRecords { get; set; }
+    public DbSet<CycleCount> CycleCounts { get; set; }
+    public DbSet<CycleCountItem> CycleCountItems { get; set; }
 
     // --- LOGS & OTHERS ---
     public DbSet<AuditLog> AuditLogs { get; set; }
@@ -56,7 +76,32 @@ public class ScmDbContext : DbContext
         modelBuilder.Entity<PurchaseOrder>().HasKey(e => e.PoId);
         modelBuilder.Entity<PurchaseOrderItem>().HasKey(e => e.PoItemId);
         modelBuilder.Entity<RecipeIngredient>().HasKey(e => e.IngredientId);
+        modelBuilder.Entity<BatchConsumption>().HasKey(e => e.BatchConsumptionId);
         modelBuilder.Entity<StockTransfer>().HasKey(e => e.TransferId);
+
+        modelBuilder.Entity<BatchConsumption>()
+            .HasOne(b => b.Lot)
+            .WithMany()
+            .HasForeignKey(b => b.LotId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<BatchConsumption>()
+            .HasOne(b => b.Uom)
+            .WithMany()
+            .HasForeignKey(b => b.UomId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        modelBuilder.Entity<ProductionBatch>()
+            .HasOne(b => b.FgLot)
+            .WithMany()
+            .HasForeignKey(b => b.FgLotId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        modelBuilder.Entity<Recipe>()
+            .HasOne(r => r.YieldUom)
+            .WithMany()
+            .HasForeignKey(r => r.YieldUomId)
+            .OnDelete(DeleteBehavior.Restrict);
 
         // Tell EF Core how to handle the TWO Location foreign keys in StockTransfer
         // We use DeleteBehavior.Restrict so deleting a location doesn't accidentally wipe out transfer history.
@@ -86,6 +131,18 @@ public class ScmDbContext : DbContext
         ConfigureStockIntegrity(modelBuilder);
         ConfigureInventoryLots(modelBuilder);
         ConfigureStockLedger(modelBuilder);
+        ConfigureSupplierItems(modelBuilder);
+        ConfigureSupplierDocuments(modelBuilder);
+        ConfigureApprovalRequests(modelBuilder);
+        ConfigurePurchaseRequisitions(modelBuilder);
+        ConfigureGoodsReceipts(modelBuilder);
+        ConfigureQualityInspections(modelBuilder);
+        ConfigureNonConformanceReports(modelBuilder);
+        ConfigureReturnToVendors(modelBuilder);
+        ConfigureDisposalRecords(modelBuilder);
+        ConfigureBranchDistribution(modelBuilder);
+        ConfigureRecallRecords(modelBuilder);
+        ConfigureCycleCounts(modelBuilder);
     }
 
     /// <summary>
@@ -358,14 +415,64 @@ public class ScmDbContext : DbContext
 
         modelBuilder.Entity<RecipeIngredient>().Property(e => e.StandardQuantity).HasPrecision(precision, scale);
 
+        modelBuilder.Entity<Recipe>().Property(e => e.OutputQuantity).HasPrecision(precision, scale);
+
         modelBuilder.Entity<PurchaseOrderItem>().Property(e => e.PoItemQuantity).HasPrecision(precision, scale);
         modelBuilder.Entity<PurchaseOrderItem>().Property(e => e.ReceivedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<PurchaseOrderItem>().Property(e => e.UnitPrice).HasPrecision(18, 4);
+
+        modelBuilder.Entity<PurchaseOrder>().Property(e => e.TotalAmount).HasPrecision(18, 4);
+
+        modelBuilder.Entity<ApprovalRequest>().Property(e => e.Amount).HasPrecision(18, 4);
+
+        modelBuilder.Entity<PurchaseRequisition>().Property(e => e.EstimatedTotalAmount).HasPrecision(18, 4);
+        modelBuilder.Entity<PurchaseRequisitionItem>().Property(e => e.RequestedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<PurchaseRequisitionItem>().Property(e => e.EstimatedUnitPrice).HasPrecision(18, 4);
+
+        modelBuilder.Entity<GoodsReceiptItem>().Property(e => e.OrderedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<GoodsReceiptItem>().Property(e => e.DeliveredQuantity).HasPrecision(precision, scale);
+
+        modelBuilder.Entity<QualityInspectionItem>().Property(e => e.DeliveredQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<QualityInspectionItem>().Property(e => e.AcceptedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<QualityInspectionItem>().Property(e => e.RejectedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<QualityInspectionItem>().Property(e => e.ConcessionQuantity).HasPrecision(precision, scale);
+
+        modelBuilder.Entity<NonConformanceReport>().Property(e => e.DefectiveQuantity).HasPrecision(precision, scale);
+
+        modelBuilder.Entity<ReturnToVendor>().Property(e => e.ReturnedQuantity).HasPrecision(precision, scale);
+
+        modelBuilder.Entity<DisposalRecord>().Property(e => e.TotalCost).HasPrecision(18, 4);
+        modelBuilder.Entity<DisposalRecordItem>().Property(e => e.QuantityDisposed).HasPrecision(precision, scale);
+        modelBuilder.Entity<DisposalRecordItem>().Property(e => e.UnitCost).HasPrecision(18, 4);
+
+        modelBuilder.Entity<BranchRequestItem>().Property(e => e.RequestedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<BranchRequestItem>().Property(e => e.ApprovedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<BranchRequestItem>().Property(e => e.DispatchedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<BranchRequestItem>().Property(e => e.ReceivedQuantity).HasPrecision(precision, scale);
+
+        modelBuilder.Entity<BranchReturnItem>().Property(e => e.ReturnedQuantity).HasPrecision(precision, scale);
+
+        modelBuilder.Entity<RecallRecord>().Property(e => e.TotalUnitsAffected).HasPrecision(precision, scale);
+
+        modelBuilder.Entity<CycleCount>().Property(e => e.TotalSystemValue).HasPrecision(18, 4);
+        modelBuilder.Entity<CycleCount>().Property(e => e.TotalCountedValue).HasPrecision(18, 4);
+        modelBuilder.Entity<CycleCount>().Property(e => e.TotalVarianceValue).HasPrecision(18, 4);
+
+        modelBuilder.Entity<CycleCountItem>().Property(e => e.SystemQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<CycleCountItem>().Property(e => e.CountedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<CycleCountItem>().Property(e => e.UnitCost).HasPrecision(18, 4);
 
         modelBuilder.Entity<ProductionBatch>().Property(e => e.BatchMultiplier).HasPrecision(precision, scale);
         modelBuilder.Entity<ProductionBatch>().Property(e => e.EstimatedQuantity).HasPrecision(precision, scale);
         modelBuilder.Entity<ProductionBatch>().Property(e => e.ActualQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<ProductionBatch>().Property(e => e.ScrapQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<ProductionBatch>().Property(e => e.TotalMaterialCost).HasPrecision(18, 4);
+        modelBuilder.Entity<ProductionBatch>().Property(e => e.UnitCost).HasPrecision(18, 4);
+        modelBuilder.Entity<ProductionBatch>().Property(e => e.YieldPercentage).HasPrecision(18, 2);
 
         modelBuilder.Entity<BatchConsumption>().Property(e => e.RequiredQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<BatchConsumption>().Property(e => e.QuantityUsed).HasPrecision(precision, scale);
+        modelBuilder.Entity<BatchConsumption>().Property(e => e.UnitCost).HasPrecision(18, 4);
 
         modelBuilder.Entity<StockTransfer>().Property(e => e.TransferQuantity).HasPrecision(precision, scale);
 
@@ -386,6 +493,53 @@ public class ScmDbContext : DbContext
         modelBuilder.Entity<PurchaseOrder>()
             .Property(e => e.Status)
             .HasConversion(EnumTextConverter<PurchaseOrderStatus>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<SupplierDocument>()
+            .Property(e => e.DocumentType)
+            .HasConversion(EnumTextConverter<SupplierDocumentType>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<ApprovalRequest>()
+            .Property(e => e.Status)
+            .HasConversion(EnumTextConverter<ApprovalStatus>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<PurchaseRequisition>()
+            .Property(e => e.Status)
+            .HasConversion(EnumTextConverter<PurchaseRequisitionStatus>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<GoodsReceipt>()
+            .Property(e => e.Status)
+            .HasConversion(EnumTextConverter<GoodsReceiptStatus>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<QualityInspection>()
+            .Property(e => e.InspectionType)
+            .HasConversion(EnumTextConverter<InspectionType>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<QualityInspection>()
+            .Property(e => e.Status)
+            .HasConversion(EnumTextConverter<QualityInspectionStatus>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<NonConformanceReport>()
+            .Property(e => e.Status)
+            .HasConversion(EnumTextConverter<NcrStatus>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<ReturnToVendor>().Property(e => e.Status)
+            .HasConversion(EnumTextConverter<RtvStatus>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<BranchRequest>().Property(e => e.Status)
+            .HasConversion(EnumTextConverter<BranchRequestStatus>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<CycleCount>().Property(e => e.Status)
+            .HasConversion(EnumTextConverter<CycleCountStatus>())
             .HasColumnType("text");
 
         modelBuilder.Entity<ProductionBatch>()
@@ -415,6 +569,448 @@ public class ScmDbContext : DbContext
 
         // InventoryMovementLog.ActionType stays a string for now: its stored values are ad hoc and need
         // a normalising data migration first, which happens in Task 9.
+    }
+
+    /// <summary>
+    /// Configures the Supplier-Item catalog linking suppliers to items with pricing, packaging, and lead times.
+    /// </summary>
+    private static void ConfigureSupplierItems(ModelBuilder modelBuilder)
+    {
+        var si = modelBuilder.Entity<SupplierItem>();
+
+        si.HasKey(e => new { e.SupplierId, e.ItemId });
+
+        si.HasOne(e => e.Supplier)
+            .WithMany(s => s.SupplierItems)
+            .HasForeignKey(e => e.SupplierId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        si.HasOne(e => e.Item)
+            .WithMany(i => i.SupplierItems)
+            .HasForeignKey(e => e.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        si.HasOne(e => e.PurchaseUom)
+            .WithMany()
+            .HasForeignKey(e => e.PurchaseUomId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        si.HasIndex(e => e.ItemId)
+            .HasDatabaseName("IX_SupplierItems_ItemId");
+
+        si.Property(e => e.UnitPrice).HasPrecision(18, 4);
+        si.Property(e => e.PackSize).HasPrecision(18, 3);
+        si.Property(e => e.MinOrderQuantity).HasPrecision(18, 3);
+        si.Property(e => e.LastPurchasePrice).HasPrecision(18, 4);
+
+        si.ToTable(t =>
+        {
+            t.HasCheckConstraint("CK_SupplierItems_UnitPrice_Positive", "\"UnitPrice\" >= 0");
+            t.HasCheckConstraint("CK_SupplierItems_PackSize_Positive", "\"PackSize\" > 0");
+            t.HasCheckConstraint("CK_SupplierItems_MinOrderQuantity_Positive", "\"MinOrderQuantity\" > 0");
+        });
+
+        modelBuilder.Entity<PurchaseOrderItem>()
+            .HasOne(poi => poi.PurchaseUom)
+            .WithMany()
+            .HasForeignKey(poi => poi.PurchaseUomId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    /// <summary>
+    /// Configures regulatory permits and compliance certificates for suppliers.
+    /// </summary>
+    private static void ConfigureSupplierDocuments(ModelBuilder modelBuilder)
+    {
+        var doc = modelBuilder.Entity<SupplierDocument>();
+
+        doc.HasKey(d => d.DocumentId);
+
+        doc.HasOne(d => d.Supplier)
+            .WithMany(s => s.SupplierDocuments)
+            .HasForeignKey(d => d.SupplierId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        doc.HasIndex(d => new { d.SupplierId, d.DocumentType })
+            .HasDatabaseName("IX_SupplierDocuments_Supplier_Type");
+
+        doc.HasIndex(d => d.ExpiryDate)
+            .HasDatabaseName("IX_SupplierDocuments_ExpiryDate");
+    }
+
+    /// <summary>
+    /// Configures approval requests for financial and quality sign-offs.
+    /// </summary>
+    private static void ConfigureApprovalRequests(ModelBuilder modelBuilder)
+    {
+        var app = modelBuilder.Entity<ApprovalRequest>();
+
+        app.HasKey(a => a.ApprovalRequestId);
+
+        app.HasIndex(a => new { a.EntityType, a.EntityId })
+            .HasDatabaseName("IX_ApprovalRequests_Entity");
+
+        app.HasIndex(a => a.Status)
+            .HasDatabaseName("IX_ApprovalRequests_Status");
+
+        app.HasIndex(a => a.RequestedAt)
+            .HasDatabaseName("IX_ApprovalRequests_RequestedAt");
+    }
+
+    /// <summary>
+    /// Configures purchase requisitions and multi-vendor fan-out line items.
+    /// </summary>
+    private static void ConfigurePurchaseRequisitions(ModelBuilder modelBuilder)
+    {
+        var pr = modelBuilder.Entity<PurchaseRequisition>();
+
+        pr.HasKey(p => p.PrId);
+
+        pr.HasIndex(p => p.PrNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_PurchaseRequisitions_PrNumber");
+
+        pr.HasIndex(p => p.Status)
+            .HasDatabaseName("IX_PurchaseRequisitions_Status");
+
+        pr.HasMany(p => p.Items)
+            .WithOne(i => i.PurchaseRequisition)
+            .HasForeignKey(i => i.PrId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var item = modelBuilder.Entity<PurchaseRequisitionItem>();
+
+        item.HasKey(i => i.PrItemId);
+
+        item.HasOne(i => i.Item)
+            .WithMany()
+            .HasForeignKey(i => i.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        item.HasOne(i => i.SuggestedSupplier)
+            .WithMany()
+            .HasForeignKey(i => i.SuggestedSupplierId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        item.HasOne(i => i.PurchaseUom)
+            .WithMany()
+            .HasForeignKey(i => i.PurchaseUomId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    /// <summary>
+    /// Configures Goods Receipt Notes (GRN).
+    /// </summary>
+    private static void ConfigureGoodsReceipts(ModelBuilder modelBuilder)
+    {
+        var grn = modelBuilder.Entity<GoodsReceipt>();
+
+        grn.HasKey(g => g.GrnId);
+
+        grn.HasIndex(g => g.GrnNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_GoodsReceipts_GrnNumber");
+
+        grn.HasIndex(g => g.PoId)
+            .HasDatabaseName("IX_GoodsReceipts_PoId");
+
+        grn.HasOne(g => g.PurchaseOrder)
+            .WithMany()
+            .HasForeignKey(g => g.PoId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        grn.HasOne(g => g.Supplier)
+            .WithMany()
+            .HasForeignKey(g => g.SupplierId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        grn.HasOne(g => g.ReceivingLocation)
+            .WithMany()
+            .HasForeignKey(g => g.ReceivingLocationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        grn.HasMany(g => g.Items)
+            .WithOne(i => i.GoodsReceipt)
+            .HasForeignKey(i => i.GrnId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var item = modelBuilder.Entity<GoodsReceiptItem>();
+
+        item.HasKey(i => i.GrnItemId);
+
+        item.HasOne(i => i.PurchaseOrderItem)
+            .WithMany()
+            .HasForeignKey(i => i.PoItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        item.HasOne(i => i.Item)
+            .WithMany()
+            .HasForeignKey(i => i.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        item.HasOne(i => i.PurchaseUom)
+            .WithMany()
+            .HasForeignKey(i => i.PurchaseUomId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        item.HasOne(i => i.Lot)
+            .WithMany()
+            .HasForeignKey(i => i.LotId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    /// <summary>
+    /// Configures Quality Inspections (Incoming, In-Process, Finished Goods QA).
+    /// </summary>
+    private static void ConfigureQualityInspections(ModelBuilder modelBuilder)
+    {
+        var qc = modelBuilder.Entity<QualityInspection>();
+
+        qc.HasKey(q => q.InspectionId);
+
+        qc.HasIndex(q => q.InspectionNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_QualityInspections_InspectionNumber");
+
+        qc.HasIndex(q => new { q.ReferenceType, q.ReferenceId })
+            .HasDatabaseName("IX_QualityInspections_Reference");
+
+        qc.HasMany(q => q.Items)
+            .WithOne(i => i.QualityInspection)
+            .HasForeignKey(i => i.InspectionId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var item = modelBuilder.Entity<QualityInspectionItem>();
+
+        item.HasKey(i => i.InspectionItemId);
+
+        item.HasOne(i => i.Item)
+            .WithMany()
+            .HasForeignKey(i => i.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        item.HasOne(i => i.Lot)
+            .WithMany()
+            .HasForeignKey(i => i.LotId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    /// <summary>
+    /// Configures Non-Conformance Reports (NCR).
+    /// </summary>
+    private static void ConfigureNonConformanceReports(ModelBuilder modelBuilder)
+    {
+        var ncr = modelBuilder.Entity<NonConformanceReport>();
+
+        ncr.HasKey(n => n.NcrId);
+
+        ncr.HasIndex(n => n.NcrNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_NonConformanceReports_NcrNumber");
+
+        ncr.HasOne(n => n.Inspection)
+            .WithMany()
+            .HasForeignKey(n => n.InspectionId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        ncr.HasOne(n => n.Supplier)
+            .WithMany()
+            .HasForeignKey(n => n.SupplierId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        ncr.HasOne(n => n.Item)
+            .WithMany()
+            .HasForeignKey(n => n.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        ncr.HasOne(n => n.Lot)
+            .WithMany()
+            .HasForeignKey(n => n.LotId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    /// <summary>
+    /// Configures Return to Vendor (RTV) records.
+    /// </summary>
+    private static void ConfigureReturnToVendors(ModelBuilder modelBuilder)
+    {
+        var rtv = modelBuilder.Entity<ReturnToVendor>();
+
+        rtv.HasKey(r => r.RtvId);
+
+        rtv.HasIndex(r => r.RtvNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_ReturnToVendors_RtvNumber");
+
+        rtv.HasOne(r => r.NonConformanceReport)
+            .WithMany()
+            .HasForeignKey(r => r.NcrId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        rtv.HasOne(r => r.Supplier)
+            .WithMany()
+            .HasForeignKey(r => r.SupplierId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        rtv.HasOne(r => r.Item)
+            .WithMany()
+            .HasForeignKey(r => r.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        rtv.HasOne(r => r.Lot)
+            .WithMany()
+            .HasForeignKey(r => r.LotId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    /// <summary>
+    /// Configures stock disposal records and write-offs.
+    /// </summary>
+    private static void ConfigureDisposalRecords(ModelBuilder modelBuilder)
+    {
+        var disp = modelBuilder.Entity<DisposalRecord>();
+
+        disp.HasKey(d => d.DisposalId);
+
+        disp.HasIndex(d => d.DisposalNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_DisposalRecords_DisposalNumber");
+
+        disp.HasMany(d => d.Items)
+            .WithOne(i => i.DisposalRecord)
+            .HasForeignKey(i => i.DisposalId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var item = modelBuilder.Entity<DisposalRecordItem>();
+
+        item.HasKey(i => i.DisposalItemId);
+
+        item.HasOne(i => i.Lot)
+            .WithMany()
+            .HasForeignKey(i => i.LotId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        item.HasOne(i => i.Item)
+            .WithMany()
+            .HasForeignKey(i => i.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    /// <summary>
+    /// Configures branch replenishment requests and store returns.
+    /// </summary>
+    private static void ConfigureBranchDistribution(ModelBuilder modelBuilder)
+    {
+        var req = modelBuilder.Entity<BranchRequest>();
+
+        req.HasKey(r => r.BranchRequestId);
+
+        req.HasIndex(r => r.RequestNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_BranchRequests_RequestNumber");
+
+        req.HasOne(r => r.Branch)
+            .WithMany()
+            .HasForeignKey(r => r.BranchId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        req.HasMany(r => r.Items)
+            .WithOne(i => i.BranchRequest)
+            .HasForeignKey(i => i.BranchRequestId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var reqItem = modelBuilder.Entity<BranchRequestItem>();
+
+        reqItem.HasKey(i => i.BranchRequestItemId);
+
+        reqItem.HasOne(i => i.Product)
+            .WithMany()
+            .HasForeignKey(i => i.ProductId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        var ret = modelBuilder.Entity<BranchReturn>();
+
+        ret.HasKey(r => r.BranchReturnId);
+
+        ret.HasIndex(r => r.ReturnNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_BranchReturns_ReturnNumber");
+
+        ret.HasOne(r => r.Branch)
+            .WithMany()
+            .HasForeignKey(r => r.BranchId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        ret.HasMany(r => r.Items)
+            .WithOne(i => i.BranchReturn)
+            .HasForeignKey(i => i.BranchReturnId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var retItem = modelBuilder.Entity<BranchReturnItem>();
+
+        retItem.HasKey(i => i.BranchReturnItemId);
+
+        retItem.HasOne(i => i.Product)
+            .WithMany()
+            .HasForeignKey(i => i.ProductId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        retItem.HasOne(i => i.Lot)
+            .WithMany()
+            .HasForeignKey(i => i.LotId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    /// <summary>
+    /// Configures recall simulation and hold cascade records.
+    /// </summary>
+    private static void ConfigureRecallRecords(ModelBuilder modelBuilder)
+    {
+        var rec = modelBuilder.Entity<RecallRecord>();
+
+        rec.HasKey(r => r.RecallId);
+
+        rec.HasIndex(r => r.RecallNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_RecallRecords_RecallNumber");
+    }
+
+    /// <summary>
+    /// Configures physical cycle count audits and inventory reconciliations.
+    /// </summary>
+    private static void ConfigureCycleCounts(ModelBuilder modelBuilder)
+    {
+        var cc = modelBuilder.Entity<CycleCount>();
+
+        cc.HasKey(c => c.CycleCountId);
+
+        cc.HasIndex(c => c.CountNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_CycleCounts_CountNumber");
+
+        cc.HasOne(c => c.Location)
+            .WithMany()
+            .HasForeignKey(c => c.LocationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        cc.HasMany(c => c.Items)
+            .WithOne(i => i.CycleCount)
+            .HasForeignKey(i => i.CycleCountId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var item = modelBuilder.Entity<CycleCountItem>();
+
+        item.HasKey(i => i.CycleCountItemId);
+
+        item.HasOne(i => i.Item)
+            .WithMany()
+            .HasForeignKey(i => i.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        item.HasOne(i => i.Lot)
+            .WithMany()
+            .HasForeignKey(i => i.LotId)
+            .OnDelete(DeleteBehavior.Restrict);
     }
 
     private static ValueConverter<TEnum, string> EnumTextConverter<TEnum>() where TEnum : struct, Enum

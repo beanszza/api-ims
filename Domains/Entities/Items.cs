@@ -6,6 +6,10 @@ namespace Domains.Entities;
 public class Item
 {
     public int ItemId { get; set; }
+    
+    /// <summary>Unique human-readable identifier (e.g. SPL-2026-0001)</summary>
+    public string ItemCode { get; set; } = string.Empty;
+    
     public string ItemName { get; set; } = string.Empty;
 
     /// <summary>
@@ -49,4 +53,5 @@ public class Item
     public ICollection<RecipeIngredient> RecipeIngredients { get; set; } = new List<RecipeIngredient>();
     public ICollection<BatchConsumption> BatchConsumptions { get; set; } = new List<BatchConsumption>();
     public ICollection<InventoryMovementLog> InventoryMovementLogs { get; set; } = new List<InventoryMovementLog>();
+    public ICollection<SupplierItem> SupplierItems { get; set; } = new List<SupplierItem>();
 }

@@ -16,15 +16,18 @@ public class RecipeService : IRecipeService
     private readonly ScmDbContext _context;
     private readonly ILogger<RecipeService> _logger;
     private readonly IUomConversionService _uomConversion;
+    private readonly IDocumentNumberService _documentNumberService;
 
     public RecipeService(
         ScmDbContext context,
         ILogger<RecipeService> logger,
-        IUomConversionService uomConversion)
+        IUomConversionService uomConversion,
+        IDocumentNumberService documentNumberService)
     {
         _context = context;
         _logger = logger;
         _uomConversion = uomConversion;
+        _documentNumberService = documentNumberService;
     }
 
     /// <summary>
@@ -73,6 +76,7 @@ public class RecipeService : IRecipeService
                 .Select(r => new RecipeResponse
                 {
                     RecipeId = r.RecipeId,
+                    RecipeCode = r.RecipeCode,
                     RecipeName = r.RecipeName,
                     ProductId = r.ProductId,
                     OutputQuantity = r.OutputQuantity,
@@ -134,8 +138,11 @@ public class RecipeService : IRecipeService
                 }
             }
 
+            var recipeCode = await _documentNumberService.NextAsync(Domains.Enums.DocumentType.Recipe);
+
             var recipe = new Recipe
             {
+                RecipeCode = recipeCode,
                 RecipeName = request.RecipeName,
                 ProductId = request.ProductId,
                 OutputQuantity = request.OutputQuantity,
@@ -155,6 +162,7 @@ public class RecipeService : IRecipeService
             var response = new RecipeResponse
             {
                 RecipeId = recipe.RecipeId,
+                RecipeCode = recipe.RecipeCode,
                 RecipeName = recipe.RecipeName,
                 ProductId = recipe.ProductId,
                 OutputQuantity = recipe.OutputQuantity,
@@ -285,6 +293,7 @@ public class RecipeService : IRecipeService
             var response = new RecipeResponse
             {
                 RecipeId = recipe.RecipeId,
+                RecipeCode = recipe.RecipeCode,
                 RecipeName = recipe.RecipeName,
                 ProductId = recipe.ProductId,
                 OutputQuantity = recipe.OutputQuantity,

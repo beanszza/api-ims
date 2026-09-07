@@ -81,20 +81,42 @@ public class PurchaseOrderService : IPurchaseOrderService
                     return ApiResponse<PurchaseOrderResponse>.FailureResponse("Quantity must be greater than zero.");
                 }
 
-                var itemExists = await _context.Items.AnyAsync(i => i.ItemId == itemReq.ItemId);
-                if (!itemExists)
+                var item = await _context.Items.FindAsync(itemReq.ItemId);
+                if (item == null)
                 {
                     return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Item with ID {itemReq.ItemId} not found.");
                 }
+
+                var unitPrice = itemReq.UnitPrice;
+                var purchaseUomId = itemReq.PurchaseUomId ?? 0;
+
+                if (unitPrice <= 0 || purchaseUomId <= 0)
+                {
+                    var catalogEntry = await _context.SupplierItems
+                        .FirstOrDefaultAsync(si => si.SupplierId == request.SupplierId && si.ItemId == itemReq.ItemId);
+                    if (catalogEntry != null)
+                    {
+                        if (unitPrice <= 0) unitPrice = catalogEntry.UnitPrice;
+                        if (purchaseUomId <= 0) purchaseUomId = catalogEntry.PurchaseUomId;
+                    }
+                }
+
+                if (purchaseUomId <= 0)
+                    purchaseUomId = item.StockUomId;
 
                 poItems.Add(new PurchaseOrderItem
                 {
                     ItemId = itemReq.ItemId,
                     SupplierId = request.SupplierId,
                     PoItemQuantity = itemReq.PoItemQuantity,
+                    UnitPrice = unitPrice,
+                    PurchaseUomId = purchaseUomId,
                     ReceivedQuantity = 0
                 });
             }
+
+            var calculatedTotal = poItems.Sum(p => p.PoItemQuantity * p.UnitPrice);
+            var finalTotal = calculatedTotal > 0 ? calculatedTotal : request.TotalAmount;
 
             var orderDate = DateTime.UtcNow;
 
@@ -111,7 +133,7 @@ public class PurchaseOrderService : IPurchaseOrderService
                     Status = PurchaseOrderStatus.Pending,
                     PaymentType = request.PaymentType,
                     ProofImageUrl = string.Empty,
-                    TotalAmount = request.TotalAmount,
+                    TotalAmount = finalTotal,
                     PurchaseOrderItems = poItems
                 };
 
@@ -123,7 +145,10 @@ public class PurchaseOrderService : IPurchaseOrderService
             var reloadedOrder = await _context.PurchaseOrders
                 .Include(o => o.Supplier)
                 .Include(o => o.PurchaseOrderItems)
-                .ThenInclude(poi => poi.Item)
+                    .ThenInclude(poi => poi.Item)
+                        .ThenInclude(i => i!.StockUom)
+                .Include(o => o.PurchaseOrderItems)
+                    .ThenInclude(poi => poi.PurchaseUom)
                 .FirstOrDefaultAsync(o => o.PoId == order.PoId);
 
             var response = MapToResponse(reloadedOrder!);
@@ -146,7 +171,10 @@ public class PurchaseOrderService : IPurchaseOrderService
             var query = _context.PurchaseOrders
                 .Include(o => o.Supplier)
                 .Include(o => o.PurchaseOrderItems)
-                .ThenInclude(poi => poi.Item)
+                    .ThenInclude(poi => poi.Item)
+                        .ThenInclude(i => i!.StockUom)
+                .Include(o => o.PurchaseOrderItems)
+                    .ThenInclude(poi => poi.PurchaseUom)
                 .AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(status) && !status.Equals("All", StringComparison.OrdinalIgnoreCase))
@@ -165,6 +193,7 @@ public class PurchaseOrderService : IPurchaseOrderService
                 var lowerSearch = search.ToLower();
                 query = query.Where(o => 
                     o.PoId.ToString().Contains(lowerSearch) || 
+                    (!string.IsNullOrEmpty(o.PoNumber) && o.PoNumber.ToLower().Contains(lowerSearch)) ||
                     (o.Supplier != null && o.Supplier.CompanyName.ToLower().Contains(lowerSearch)) ||
                     o.PurchaseOrderItems.Any(poi => poi.Item != null && poi.Item.ItemName.ToLower().Contains(lowerSearch))
                 );
@@ -343,6 +372,15 @@ public class PurchaseOrderService : IPurchaseOrderService
                 return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Purchase order with ID {id} not found.");
             }
 
+            // Only Pending POs may be edited. Editing an Arrived or Completed order would reset
+            // ReceivedQuantity = 0 on all line items, silently corrupting the receipt history.
+            if (order.Status != PurchaseOrderStatus.Pending)
+            {
+                return ApiResponse<PurchaseOrderResponse>.FailureResponse(
+                    $"A {EnumDbValue.ToDbValue(order.Status)} purchase order cannot be edited. " +
+                    "To correct it, void and re-create the order.");
+            }
+
             // Validate Supplier existence
             var supplier = await _context.Suppliers.FindAsync(request.SupplierId);
             if (supplier == null)
@@ -362,15 +400,36 @@ public class PurchaseOrderService : IPurchaseOrderService
                 var poItems = new List<PurchaseOrderItem>();
                 foreach (var itemReq in request.Items)
                 {
+                    var item = await _context.Items.FindAsync(itemReq.ItemId);
+                    var unitPrice = itemReq.UnitPrice;
+                    var purchaseUomId = itemReq.PurchaseUomId ?? 0;
+
+                    if (unitPrice <= 0 || purchaseUomId <= 0)
+                    {
+                        var catalogEntry = await _context.SupplierItems
+                            .FirstOrDefaultAsync(si => si.SupplierId == request.SupplierId && si.ItemId == itemReq.ItemId);
+                        if (catalogEntry != null)
+                        {
+                            if (unitPrice <= 0) unitPrice = catalogEntry.UnitPrice;
+                            if (purchaseUomId <= 0) purchaseUomId = catalogEntry.PurchaseUomId;
+                        }
+                    }
+
+                    if (purchaseUomId <= 0 && item != null)
+                        purchaseUomId = item.StockUomId;
+
                     poItems.Add(new PurchaseOrderItem
                     {
                         ItemId = itemReq.ItemId,
                         SupplierId = request.SupplierId,
                         PoItemQuantity = itemReq.PoItemQuantity,
+                        UnitPrice = unitPrice,
+                        PurchaseUomId = purchaseUomId,
                         ReceivedQuantity = 0
                     });
                 }
                 order.PurchaseOrderItems = poItems;
+                order.TotalAmount = poItems.Sum(p => p.PoItemQuantity * p.UnitPrice);
             }
 
             _context.PurchaseOrders.Update(order);
@@ -380,7 +439,10 @@ public class PurchaseOrderService : IPurchaseOrderService
             var reloadedOrder = await _context.PurchaseOrders
                 .Include(o => o.Supplier)
                 .Include(o => o.PurchaseOrderItems)
-                .ThenInclude(poi => poi.Item)
+                    .ThenInclude(poi => poi.Item)
+                        .ThenInclude(i => i!.StockUom)
+                .Include(o => o.PurchaseOrderItems)
+                    .ThenInclude(poi => poi.PurchaseUom)
                 .FirstOrDefaultAsync(o => o.PoId == order.PoId);
 
             var response = MapToResponse(reloadedOrder!);
@@ -575,7 +637,10 @@ public class PurchaseOrderService : IPurchaseOrderService
                 ItemId = poi.ItemId,
                 ItemName = poi.Item?.ItemName ?? string.Empty,
                 PoItemQuantity = poi.PoItemQuantity,
-                ReceivedQuantity = poi.ReceivedQuantity
+                ReceivedQuantity = poi.ReceivedQuantity,
+                UnitPrice = poi.UnitPrice,
+                PurchaseUomId = poi.PurchaseUomId,
+                PurchaseUomName = poi.PurchaseUom?.Abbreviation ?? poi.Item?.StockUom?.Abbreviation ?? "Unit"
             }).ToList()
         };
     }

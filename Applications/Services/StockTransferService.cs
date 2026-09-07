@@ -18,6 +18,8 @@ public class StockTransferService : IStockTransferService
 {
     private readonly ScmDbContext _context;
     private readonly ILogger<StockTransferService> _logger;
+    private readonly IDocumentNumberService _documentNumbers;
+    private readonly IAllocationService _allocation;
     private readonly IStatusTransitionGuard _statusGuard;
     private readonly IPostingTransaction _posting;
     private readonly ICurrentUserService _currentUser;
@@ -26,6 +28,8 @@ public class StockTransferService : IStockTransferService
     public StockTransferService(
         ScmDbContext context,
         ILogger<StockTransferService> logger,
+        IDocumentNumberService documentNumbers,
+        IAllocationService allocation,
         IStatusTransitionGuard statusGuard,
         IPostingTransaction posting,
         ICurrentUserService currentUser,
@@ -33,6 +37,8 @@ public class StockTransferService : IStockTransferService
     {
         _context = context;
         _logger = logger;
+        _documentNumbers = documentNumbers;
+        _allocation = allocation;
         _statusGuard = statusGuard;
         _posting = posting;
         _currentUser = currentUser;
@@ -61,6 +67,7 @@ public class StockTransferService : IStockTransferService
                 var lowerSearch = search.ToLower();
                 query = query.Where(st => 
                     st.TransferId.ToString().Contains(lowerSearch) ||
+                    (!string.IsNullOrEmpty(st.TransferNumber) && st.TransferNumber.ToLower().Contains(lowerSearch)) ||
                     (st.Product != null && st.Product.Item != null && st.Product.Item.ItemName.ToLower().Contains(lowerSearch)) ||
                     (st.SourceLocation != null && st.SourceLocation.LocationName.ToLower().Contains(lowerSearch)) ||
                     (st.DestLocation != null && st.DestLocation.LocationName.ToLower().Contains(lowerSearch))
@@ -132,14 +139,17 @@ public class StockTransferService : IStockTransferService
                 return ApiResponse<StockTransferResponse>.FailureResponse($"Insufficient stock at source location. Available: {(inventory == null ? 0 : inventory.CurrentStock)}");
             }
 
+            var transferNumber = await _documentNumbers.NextAsync(DocumentType.Shipment, DateTime.UtcNow);
+
             var transfer = new StockTransfer
             {
+                TransferNumber = transferNumber,
                 ProductId = request.ProductId,
                 SourceLocationId = request.SourceLocationId,
                 DestLocationId = request.DestLocationId,
                 TransferQuantity = request.TransferQuantity,
                 Status = ShipmentStatus.Pending,
-                TransferDate = request.TransferDate.HasValue ? DateTime.SpecifyKind(request.TransferDate.Value, DateTimeKind.Utc) : DateTime.UtcNow
+                TransferDate = DateTime.UtcNow
             };
 
             _context.StockTransfers.Add(transfer);
@@ -148,17 +158,7 @@ public class StockTransferService : IStockTransferService
             _audit.Record(nameof(StockTransfer), transfer.TransferId.ToString(), "Created");
             await _context.SaveChangesAsync();
 
-            return ApiResponse<StockTransferResponse>.SuccessResponse(new StockTransferResponse
-            {
-                TransferId = transfer.TransferId,
-                ProductId = transfer.ProductId,
-                ProductName = product.Item.ItemName,
-                SourceLocationId = transfer.SourceLocationId,
-                DestLocationId = transfer.DestLocationId,
-                TransferQuantity = transfer.TransferQuantity,
-                Status = EnumDbValue.ToDbValue(transfer.Status),
-                TransferDate = transfer.TransferDate
-            }, "Stock transfer created successfully.");
+            return ApiResponse<StockTransferResponse>.SuccessResponse(MapToResponse(transfer), "Stock transfer created successfully.");
         }
         catch (Exception ex)
         {
@@ -214,19 +214,7 @@ public class StockTransferService : IStockTransferService
             _audit.Record(nameof(StockTransfer), transfer.TransferId.ToString(), "Updated");
             await _context.SaveChangesAsync();
 
-            return ApiResponse<StockTransferResponse>.SuccessResponse(new StockTransferResponse
-            {
-                TransferId = transfer.TransferId,
-                ProductId = transfer.ProductId,
-                ProductName = product.Item.ItemName,
-                SourceLocationId = transfer.SourceLocationId,
-                SourceLocationName = transfer.SourceLocation?.LocationName,
-                DestLocationId = transfer.DestLocationId,
-                DestLocationName = destLocation.LocationName,
-                TransferQuantity = transfer.TransferQuantity,
-                Status = EnumDbValue.ToDbValue(transfer.Status),
-                TransferDate = transfer.TransferDate
-            }, "Stock transfer updated successfully.");
+            return ApiResponse<StockTransferResponse>.SuccessResponse(MapToResponse(transfer), "Stock transfer updated successfully.");
         }
         catch (Exception ex)
         {
@@ -272,21 +260,34 @@ public class StockTransferService : IStockTransferService
             {
             if (newStatus == ShipmentStatus.InTransit && transfer.Status == ShipmentStatus.Pending)
             {
+                // Verify available finished goods lots via FEFO
+                var allocationResult = await _allocation.AllocateFefoAsync(
+                    transfer.Product!.ItemId, transfer.SourceLocationId, transfer.TransferQuantity);
+
+                if (!allocationResult.IsFulfilled)
+                {
+                    throw InsufficientStockException.ForLocation(
+                        transfer.Product.Item?.ItemName ?? $"Product {transfer.ProductId}",
+                        transfer.TransferQuantity,
+                        allocationResult.AllocatedQuantity);
+                }
+
                 // Deduct from source inventory
                 var sourceInventory = await _context.Inventories
                     .FirstOrDefaultAsync(i => i.LocationId == transfer.SourceLocationId && i.ItemId == transfer.Product.ItemId);
 
                 if (sourceInventory == null || sourceInventory.CurrentStock < transfer.TransferQuantity)
                 {
-                    // Throwing rather than returning aborts the posting, so the audit entry and status
-                    // change staged alongside it are rolled back too.
-                    throw new InsufficientStockException(
-                        "Insufficient stock at source location to begin transit. " +
-                        $"Requested {transfer.TransferQuantity}, available {sourceInventory?.CurrentStock ?? 0}.");
+                    throw InsufficientStockException.ForLocation(
+                        transfer.Product.Item?.ItemName ?? $"Product {transfer.ProductId}",
+                        transfer.TransferQuantity,
+                        sourceInventory?.CurrentStock ?? 0m);
                 }
 
                 sourceInventory.CurrentStock -= transfer.TransferQuantity;
                 _context.Inventories.Update(sourceInventory);
+
+                transfer.DispatchedDate = DateTime.UtcNow;
 
                 // Log deduction
                 var log = new InventoryMovementLog
@@ -295,7 +296,7 @@ public class StockTransferService : IStockTransferService
                     LocationId = transfer.SourceLocationId,
                     ChangeQuantity = -transfer.TransferQuantity,
                     ActionType = "Transfer Out",
-                    ReferenceId = transfer.TransferId.ToString(),
+                    ReferenceId = transfer.TransferNumber,
                     UserId = actor.UserId,
                     UserName = actor.AuditName,
                     Timestamp = DateTime.UtcNow
@@ -304,15 +305,33 @@ public class StockTransferService : IStockTransferService
             }
             else if (newStatus == ShipmentStatus.Completed && transfer.Status == ShipmentStatus.InTransit)
             {
-                // The user explicitly requested that completed deliveries DO NOT add to the destination inventory.
-                // They only want it to be a straight deduction from the Commissary.
+                transfer.ReceivedDate = DateTime.UtcNow;
+                transfer.ReceivedBy = actor.AuditName;
+
+                if (transfer.BranchRequestId.HasValue)
+                {
+                    var req = await _context.BranchRequests
+                        .Include(r => r.Items)
+                        .FirstOrDefaultAsync(r => r.BranchRequestId == transfer.BranchRequestId.Value);
+
+                    if (req != null)
+                    {
+                        var reqItem = req.Items.FirstOrDefault(i => i.ProductId == transfer.ProductId);
+                        if (reqItem != null)
+                        {
+                            reqItem.ReceivedQuantity += transfer.TransferQuantity;
+                        }
+                        req.Status = BranchRequestStatus.Fulfilled;
+                    }
+                }
+
                 var log = new InventoryMovementLog
                 {
                     ItemId = transfer.Product.ItemId,
                     LocationId = transfer.DestLocationId,
                     ChangeQuantity = 0,
-                    ActionType = "Transfer Completed (No Addition)",
-                    ReferenceId = transfer.TransferId.ToString(),
+                    ActionType = "Transfer Completed (Delivered to Branch)",
+                    ReferenceId = transfer.TransferNumber,
                     UserId = actor.UserId,
                     UserName = actor.AuditName,
                     Timestamp = DateTime.UtcNow
@@ -388,18 +407,25 @@ public class StockTransferService : IStockTransferService
         }
     }
 
-    private static StockTransferResponse MapToResponse(StockTransfer transfer) => new()
+    private static StockTransferResponse MapToResponse(StockTransfer st) => new()
     {
-        TransferId = transfer.TransferId,
-        ProductId = transfer.ProductId,
-        ProductName = transfer.Product?.Item?.ItemName ?? "Unknown",
-        SourceLocationId = transfer.SourceLocationId,
-        SourceLocationName = transfer.SourceLocation?.LocationName ?? "Unknown",
-        DestLocationId = transfer.DestLocationId,
-        DestLocationName = transfer.DestLocation?.LocationName ?? "Unknown",
-        TransferQuantity = transfer.TransferQuantity,
-        Status = EnumDbValue.ToDbValue(transfer.Status),
-        TransferDate = transfer.TransferDate
+        TransferId = st.TransferId,
+        TransferNumber = st.TransferNumber,
+        BranchRequestId = st.BranchRequestId,
+        ProductId = st.ProductId,
+        ProductName = st.Product?.Item?.ItemName ?? $"Product {st.ProductId}",
+        SourceLocationId = st.SourceLocationId,
+        SourceLocationName = st.SourceLocation?.LocationName ?? $"Location {st.SourceLocationId}",
+        DestLocationId = st.DestLocationId,
+        DestLocationName = st.DestLocation?.LocationName ?? $"Location {st.DestLocationId}",
+        TransferQuantity = st.TransferQuantity,
+        Status = EnumDbValue.ToDbValue(st.Status),
+        DriverName = st.DriverName,
+        VehiclePlate = st.VehiclePlate,
+        TransferDate = st.TransferDate,
+        DispatchedDate = st.DispatchedDate,
+        ReceivedDate = st.ReceivedDate,
+        ReceivedBy = st.ReceivedBy
     };
 
     public async Task<ApiResponse<TransferDashboardResponse>> GetTransferDashboardSummaryAsync()

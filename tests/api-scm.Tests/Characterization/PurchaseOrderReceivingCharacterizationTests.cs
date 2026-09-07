@@ -96,8 +96,8 @@ public sealed class PurchaseOrderReceivingCharacterizationTests(ScmDatabaseFixtu
             ProofImageUrl = string.Empty,
             PurchaseOrderItems =
             [
-                new PurchaseOrderItem { ItemId = world.UbeItemId, SupplierId = world.SupplierAId, PoItemQuantity = 90m },
-                new PurchaseOrderItem { ItemId = world.SugarItemId, SupplierId = world.SupplierAId, PoItemQuantity = 50m }
+                new PurchaseOrderItem { ItemId = world.UbeItemId, SupplierId = world.SupplierAId, PoItemQuantity = 90m, PurchaseUomId = world.KgUomId, UnitPrice = 80m },
+                new PurchaseOrderItem { ItemId = world.SugarItemId, SupplierId = world.SupplierAId, PoItemQuantity = 50m, PurchaseUomId = world.KgUomId, UnitPrice = 50m }
             ]
         };
         context.PurchaseOrders.Add(order);
@@ -190,8 +190,8 @@ public sealed class PurchaseOrderReceivingCharacterizationTests(ScmDatabaseFixtu
             .LocationId.Should().Be(world.QuarantineLocationId);
     }
 
-    [Fact(DisplayName = "Defect 09: editing a received PO wipes ReceivedQuantity while stock stays")]
-    public async Task Defect09_Received_Po_Is_Still_Editable_And_Corrupts_Data()
+    [Fact(DisplayName = "Defect 09 FIXED in Task 14: editing a received PO is refused")]
+    public async Task Defect09_Fixed_Received_Po_Cannot_Be_Edited()
     {
         await using var context = CreateContext();
         var world = await TestDataSeeder.SeedBaselineAsync(context);
@@ -209,7 +209,7 @@ public sealed class PurchaseOrderReceivingCharacterizationTests(ScmDatabaseFixtu
             received.PurchaseOrderItems.Single().ReceivedQuantity.Should().Be(90m);
         }
 
-        // The PO is Completed and its stock is already on hand, yet the edit path accepts it.
+        // The PO is Completed and its stock is already on hand: the edit path refuses it.
         var edit = await service.UpdatePurchaseOrderAsync(order.PoId, new CreatePurchaseOrderRequest
         {
             SupplierId = world.SupplierAId,
@@ -218,7 +218,8 @@ public sealed class PurchaseOrderReceivingCharacterizationTests(ScmDatabaseFixtu
             Items = [new CreatePurchaseOrderItemRequest { ItemId = world.UbeItemId, PoItemQuantity = 5m }]
         });
 
-        edit.Success.Should().BeTrue("there is no status guard on UpdatePurchaseOrderAsync");
+        edit.Success.Should().BeFalse("editing a completed PO is refused by the immutability guard");
+        edit.Message.Should().Contain("cannot be edited");
 
         await using var verify = CreateContext();
         var afterEdit = await verify.PurchaseOrders
@@ -229,11 +230,9 @@ public sealed class PurchaseOrderReceivingCharacterizationTests(ScmDatabaseFixtu
             .Where(i => i.ItemId == world.UbeItemId)
             .SumAsync(i => i.CurrentStock);
 
-        line.PoItemQuantity.Should().Be(5m, "the original line was deleted and replaced");
-        line.ReceivedQuantity.Should().Be(0m, "the receipt record is destroyed");
-        onHand.Should().Be(90m, "but the 90 kg it accounted for is still sitting in inventory");
-
-        // Zero received against ninety on hand is unreconcilable. Task 14 adds the immutability guard.
+        line.PoItemQuantity.Should().Be(90m, "the original line was preserved");
+        line.ReceivedQuantity.Should().Be(90m, "the receipt record remains intact");
+        onHand.Should().Be(90m, "and stock is consistent");
     }
 
     [Fact(DisplayName = "Defect 16 FIXED in Task 6: receiving is attributed to the acting user")]
