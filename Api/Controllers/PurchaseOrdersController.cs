@@ -35,6 +35,13 @@ public class PurchaseOrdersController : ControllerBase
         return result.Success ? Ok(result) : StatusCode(500, result);
     }
 
+    [HttpGet("{id:int}")]
+    public async Task<ActionResult<ApiResponse<PurchaseOrderResponse>>> GetPurchaseOrderById([FromRoute] int id)
+    {
+        var result = await _purchaseOrderService.GetPurchaseOrderByIdAsync(id);
+        return result.Success ? Ok(result) : NotFound(result);
+    }
+
     [HttpPut("{id}/status")]
     public async Task<ActionResult<ApiResponse<PurchaseOrderResponse>>> UpdateOrderStatus([FromRoute] int id, [FromBody] UpdatePurchaseOrderQaRequest request)
     {
@@ -89,5 +96,26 @@ public class PurchaseOrdersController : ControllerBase
         {
             return StatusCode(500, ApiResponse<EmptyPayload>.FailureResponse($"Failed to export CSV: {ex.Message}"));
         }
+    }
+
+    /// <summary>
+    /// Returns the total quantity already ordered per item across all non-cancelled POs for a given PR.
+    /// Used by the frontend to enforce per-item ordering limits when creating new POs.
+    /// </summary>
+    [HttpGet("pr/{prId:int}/ordered-qty")]
+    public async Task<ActionResult<ApiResponse<List<PrItemOrderedQtyResponse>>>> GetOrderedQtyForPr([FromRoute] int prId)
+    {
+        var result = await _purchaseOrderService.GetOrderedQtyForPrAsync(prId);
+        return result.Success ? Ok(result) : StatusCode(500, result);
+    }
+
+    /// <summary>
+    /// Returns the next sequential PO number that will be assigned to a new Purchase Order.
+    /// </summary>
+    [HttpGet("next-number")]
+    public async Task<ActionResult<ApiResponse<string>>> GetNextPoNumber()
+    {
+        var result = await _purchaseOrderService.GetNextPoNumberPreviewAsync();
+        return result.Success ? Ok(result) : StatusCode(500, result);
     }
 }

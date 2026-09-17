@@ -47,7 +47,7 @@ public static class DocumentNumbering
 
     public static string PrefixFor(DocumentType documentType) => documentType switch
     {
-        DocumentType.PurchaseRequisition => "REQ",
+        DocumentType.PurchaseRequisition => "PR",
         DocumentType.PurchaseOrder => "PO",
         DocumentType.GoodsReceipt => "GRN",
         DocumentType.IncomingInspection => "QC-IN",

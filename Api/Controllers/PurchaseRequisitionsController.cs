@@ -45,6 +45,17 @@ public class PurchaseRequisitionsController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    /// <summary>Updates an existing draft or returned purchase requisition.</summary>
+    [HttpPut("{id:int}")]
+    public async Task<ActionResult<ApiResponse<PurchaseRequisitionResponse>>> Update(int id, [FromBody] UpdatePurchaseRequisitionRequest request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var result = await _prService.UpdatePurchaseRequisitionAsync(id, request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     /// <summary>Updates the status of a purchase requisition (e.g., Pending Approval, Approved, Rejected).</summary>
     [HttpPut("{id:int}/status")]
     public async Task<ActionResult<ApiResponse<PurchaseRequisitionResponse>>> UpdateStatus(int id, [FromBody] UpdatePurchaseRequisitionStatusRequest request)

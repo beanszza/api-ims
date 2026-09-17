@@ -20,5 +20,11 @@ public enum PurchaseRequisitionStatus
     ConvertedToPo = 5,
 
     [DbValue("Cancelled")]
-    Cancelled = 6
+    Cancelled = 6,
+
+    [DbValue("Returned")]
+    Returned = 7,
+
+    [DbValue("Closed")]
+    Closed = 8
 }

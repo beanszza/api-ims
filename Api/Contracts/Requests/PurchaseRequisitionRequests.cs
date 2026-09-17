@@ -6,12 +6,45 @@ namespace api_scm.Contracts.Requests;
 
 public class CreatePurchaseRequisitionRequest
 {
+    public string? RequestedBy { get; set; }
+
     [Required]
     public string Department { get; set; } = string.Empty;
 
     public DateTime RequiredDate { get; set; }
 
+    public string? RequestType { get; set; }
+
+    public string? Priority { get; set; }
+
     public string? Purpose { get; set; }
+
+    public string? Notes { get; set; }
+
+    public bool SubmitForApproval { get; set; }
+
+    [Required]
+    public List<CreatePurchaseRequisitionItemRequest> Items { get; set; } = new();
+}
+
+public class UpdatePurchaseRequisitionRequest
+{
+    public string? RequestedBy { get; set; }
+
+    [Required]
+    public string Department { get; set; } = string.Empty;
+
+    public DateTime RequiredDate { get; set; }
+
+    public string? RequestType { get; set; }
+
+    public string? Priority { get; set; }
+
+    public string? Purpose { get; set; }
+
+    public string? Notes { get; set; }
+
+    public bool SubmitForApproval { get; set; }
 
     [Required]
     public List<CreatePurchaseRequisitionItemRequest> Items { get; set; } = new();
@@ -38,4 +71,7 @@ public class UpdatePurchaseRequisitionStatusRequest
     public string Status { get; set; } = string.Empty;
 
     public string? Comments { get; set; }
+
+    public string? AdminNotes { get; set; }
 }
+

@@ -9,19 +9,27 @@ public class PurchaseOrder
     /// <summary>
     /// Human-readable document number, for example <c>PO-2026-0042</c>. Unique.
     /// </summary>
-    /// <remarks>
-    /// The number people quote. Previously the UI derived a label from the primary key, which meant the
-    /// reference nobody could look up in a supplier's email was tied to a surrogate id.
-    /// </remarks>
     public string PoNumber { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Optional reference to the Purchase Requisition this PO was created from.
+    /// </summary>
+    public int? PrId { get; set; }
+    public PurchaseRequisition? PurchaseRequisition { get; set; }
 
     public int SupplierId { get; set; }
     public DateTime OrderDate { get; set; }
     public DateTime ExpectedArrivalDate { get; set; }
-    public PurchaseOrderStatus Status { get; set; } = PurchaseOrderStatus.Pending;
+    public PurchaseOrderStatus Status { get; set; } = PurchaseOrderStatus.Draft;
     public string PaymentType { get; set; } = string.Empty;
     public string ProofImageUrl { get; set; } = string.Empty;
     public decimal TotalAmount { get; set; }
+
+    /// <summary>Name of the person who created / requested this PO.</summary>
+    public string RequestedBy { get; set; } = string.Empty;
+
+    /// <summary>Admin notes for rejection or return-for-revision reason.</summary>
+    public string? AdminNotes { get; set; }
 
     public string? QaNotes { get; set; }
     public DateTime? QaInspectedDate { get; set; }

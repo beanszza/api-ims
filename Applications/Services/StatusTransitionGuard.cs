@@ -70,21 +70,52 @@ public sealed class StatusTransitionGuard : IStatusTransitionGuard
             $"lifecycles), or a map must be added to {nameof(StatusTransitionGuard)}.");
     }
 
-    /// <summary>Pending -> Arrived -> Completed, matching the procurement UI's Mark Arrived then QA Inspection flow.</summary>
+    /// <summary>
+    /// Full PO approval workflow:
+    /// Draft → PendingApproval → Approved → Ordered (or Arrived for legacy delivery flow)
+    /// PendingApproval → Rejected | Returned → Draft (re-submit)
+    /// Legacy: Pending → Arrived → Completed
+    /// </summary>
     private static Dictionary<PurchaseOrderStatus, PurchaseOrderStatus[]> BuildPurchaseOrderMap() => new()
     {
+        // Legacy unspecified rows get a way out
         [PurchaseOrderStatus.Unspecified] =
         [
             PurchaseOrderStatus.Pending,
-            PurchaseOrderStatus.Arrived,
+            PurchaseOrderStatus.Draft,
             PurchaseOrderStatus.Cancelled
         ],
+        // --- New approval workflow ---
+        [PurchaseOrderStatus.Draft] =
+        [
+            PurchaseOrderStatus.PendingApproval,
+            PurchaseOrderStatus.Cancelled
+        ],
+        [PurchaseOrderStatus.PendingApproval] =
+        [
+            PurchaseOrderStatus.Approved,
+            PurchaseOrderStatus.Rejected,
+            PurchaseOrderStatus.Returned,
+            PurchaseOrderStatus.Cancelled
+        ],
+        [PurchaseOrderStatus.Returned] =
+        [
+            PurchaseOrderStatus.PendingApproval,
+            PurchaseOrderStatus.Cancelled
+        ],
+        [PurchaseOrderStatus.Approved] =
+        [
+            PurchaseOrderStatus.Ordered,
+            PurchaseOrderStatus.Arrived,   // bridge to legacy delivery flow
+            PurchaseOrderStatus.Cancelled
+        ],
+        [PurchaseOrderStatus.Ordered] = [],
+        // --- Legacy procurement flow (kept for backward compat) ---
         [PurchaseOrderStatus.Pending] =
         [
             PurchaseOrderStatus.Arrived,
             PurchaseOrderStatus.Cancelled
         ],
-        // QA happens on arrival, so Completed and Rejected are only reachable once goods are here.
         [PurchaseOrderStatus.Arrived] =
         [
             PurchaseOrderStatus.Completed,
@@ -95,6 +126,7 @@ public sealed class StatusTransitionGuard : IStatusTransitionGuard
         [PurchaseOrderStatus.Rejected] = [],
         [PurchaseOrderStatus.Cancelled] = []
     };
+
 
     /// <summary>
     /// Pending -> In Transit -> Completed. Closes a hole in the old code, where Pending -> Completed

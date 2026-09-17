@@ -20,12 +20,22 @@ public class PurchaseRequisition
     public DateTime RequiredDate { get; set; }
 
     public PurchaseRequisitionStatus Status { get; set; } = PurchaseRequisitionStatus.Draft;
+    
+    public string? RequestType { get; set; }
+
+    public string? Priority { get; set; }
 
     public string? Purpose { get; set; }
+
+    public string? Notes { get; set; }
+
+    public string? AdminNotes { get; set; }
 
     public decimal EstimatedTotalAmount { get; set; }
 
     public string? GeneratedPoNumbers { get; set; }
+
+    public DateTime? UpdatedAt { get; set; }
 
     public ICollection<PurchaseRequisitionItem> Items { get; set; } = new List<PurchaseRequisitionItem>();
 }

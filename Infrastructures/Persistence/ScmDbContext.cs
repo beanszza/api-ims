@@ -419,7 +419,9 @@ public class ScmDbContext : DbContext
 
         modelBuilder.Entity<PurchaseOrderItem>().Property(e => e.PoItemQuantity).HasPrecision(precision, scale);
         modelBuilder.Entity<PurchaseOrderItem>().Property(e => e.ReceivedQuantity).HasPrecision(precision, scale);
-        modelBuilder.Entity<PurchaseOrderItem>().Property(e => e.UnitPrice).HasPrecision(18, 4);
+        modelBuilder.Entity<PurchaseOrderItem>().Property(e => e.TotalPrice).HasPrecision(18, 4);
+        modelBuilder.Entity<PurchaseOrderItem>().Ignore(e => e.UnitPrice);
+        modelBuilder.Entity<PurchaseOrderItem>().Ignore(e => e.LineTotal);
 
         modelBuilder.Entity<PurchaseOrder>().Property(e => e.TotalAmount).HasPrecision(18, 4);
 

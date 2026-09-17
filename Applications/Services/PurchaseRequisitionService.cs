@@ -45,6 +45,7 @@ public class PurchaseRequisitionService : IPurchaseRequisitionService
             var query = _context.PurchaseRequisitions
                 .Include(p => p.Items)
                     .ThenInclude(i => i.Item)
+                        .ThenInclude(it => it.Inventories)
                 .Include(p => p.Items)
                     .ThenInclude(i => i.SuggestedSupplier)
                 .Include(p => p.Items)
@@ -76,6 +77,7 @@ public class PurchaseRequisitionService : IPurchaseRequisitionService
             var pr = await _context.PurchaseRequisitions
                 .Include(p => p.Items)
                     .ThenInclude(i => i.Item)
+                        .ThenInclude(it => it.Inventories)
                 .Include(p => p.Items)
                     .ThenInclude(i => i.SuggestedSupplier)
                 .Include(p => p.Items)
@@ -102,7 +104,7 @@ public class PurchaseRequisitionService : IPurchaseRequisitionService
                 return ApiResponse<PurchaseRequisitionResponse>.FailureResponse("Requisition must contain at least one item.");
 
             var actor = _currentUser.Current;
-            var reqDate = DateTime.UtcNow;
+            var reqDateNow = DateTime.UtcNow;
 
             var prItems = new List<PurchaseRequisitionItem>();
             foreach (var itemReq in request.Items)
@@ -135,20 +137,28 @@ public class PurchaseRequisitionService : IPurchaseRequisitionService
             }
 
             var estTotal = prItems.Sum(i => i.RequestedQuantity * i.EstimatedUnitPrice);
-            var reqDateNow = DateTime.UtcNow;
-
             var prNumber = await _documentNumbers.NextAsync(DocumentType.PurchaseRequisition, reqDateNow);
+            var initialStatus = request.SubmitForApproval ? PurchaseRequisitionStatus.PendingApproval : PurchaseRequisitionStatus.Draft;
+            var requester = !string.IsNullOrWhiteSpace(request.RequestedBy) && request.RequestedBy != "Unauthenticated"
+                ? request.RequestedBy.Trim()
+                : (!string.IsNullOrWhiteSpace(actor.AuditName) && actor.AuditName != "Unauthenticated"
+                    ? actor.AuditName
+                    : "Inventory Manager");
 
             var pr = new PurchaseRequisition
             {
                 PrNumber = prNumber,
-                Department = request.Department.Trim(),
-                RequestedBy = actor.AuditName,
+                Department = string.IsNullOrWhiteSpace(request.Department) ? "Inventory" : request.Department.Trim(),
+                RequestedBy = requester,
                 RequestDate = reqDateNow,
                 RequiredDate = request.RequiredDate != default ? request.RequiredDate : reqDateNow.AddDays(7),
-                Status = PurchaseRequisitionStatus.Draft,
+                Status = initialStatus,
+                RequestType = string.IsNullOrWhiteSpace(request.RequestType) ? "Stock Replenishment" : request.RequestType.Trim(),
+                Priority = string.IsNullOrWhiteSpace(request.Priority) ? "Normal" : request.Priority.Trim(),
                 Purpose = request.Purpose,
+                Notes = request.Notes,
                 EstimatedTotalAmount = estTotal,
+                UpdatedAt = reqDateNow,
                 Items = prItems
             };
 
@@ -156,7 +166,7 @@ public class PurchaseRequisitionService : IPurchaseRequisitionService
             await _context.SaveChangesAsync();
 
             var reloaded = await _context.PurchaseRequisitions
-                .Include(p => p.Items).ThenInclude(i => i.Item)
+                .Include(p => p.Items).ThenInclude(i => i.Item).ThenInclude(it => it.Inventories)
                 .Include(p => p.Items).ThenInclude(i => i.SuggestedSupplier)
                 .Include(p => p.Items).ThenInclude(i => i.PurchaseUom)
                 .FirstAsync(p => p.PrId == pr.PrId);
@@ -164,10 +174,10 @@ public class PurchaseRequisitionService : IPurchaseRequisitionService
             _audit.Record(
                 nameof(PurchaseRequisition),
                 pr.PrNumber,
-                "RequisitionCreated",
+                request.SubmitForApproval ? "RequisitionSubmittedForApproval" : "RequisitionDraftSaved",
                 fieldName: "Status",
                 oldValue: null,
-                newValue: "Draft");
+                newValue: EnumDbValue.ToDbValue(initialStatus));
 
             return ApiResponse<PurchaseRequisitionResponse>.SuccessResponse(MapToResponse(reloaded), "Purchase requisition created successfully.");
         }
@@ -178,12 +188,108 @@ public class PurchaseRequisitionService : IPurchaseRequisitionService
         }
     }
 
+    public async Task<ApiResponse<PurchaseRequisitionResponse>> UpdatePurchaseRequisitionAsync(int prId, UpdatePurchaseRequisitionRequest request)
+    {
+        try
+        {
+            var pr = await _context.PurchaseRequisitions
+                .Include(p => p.Items)
+                .FirstOrDefaultAsync(p => p.PrId == prId);
+
+            if (pr == null)
+                return ApiResponse<PurchaseRequisitionResponse>.FailureResponse($"Purchase requisition {prId} not found.");
+
+            if (pr.Status != PurchaseRequisitionStatus.Draft && pr.Status != PurchaseRequisitionStatus.Returned)
+            {
+                return ApiResponse<PurchaseRequisitionResponse>.FailureResponse($"Only Draft or Returned requisitions can be edited. Current status: {EnumDbValue.ToDbValue(pr.Status)}.");
+            }
+
+            if (request.Items == null || !request.Items.Any())
+                return ApiResponse<PurchaseRequisitionResponse>.FailureResponse("Requisition must contain at least one item.");
+
+            // Remove existing items
+            _context.PurchaseRequisitionItems.RemoveRange(pr.Items);
+
+            var prItems = new List<PurchaseRequisitionItem>();
+            foreach (var itemReq in request.Items)
+            {
+                var item = await _context.Items.FindAsync(itemReq.ItemId);
+                if (item == null)
+                    return ApiResponse<PurchaseRequisitionResponse>.FailureResponse($"Item {itemReq.ItemId} not found.");
+
+                var uomId = itemReq.PurchaseUomId ?? item.StockUomId;
+                var unitPrice = itemReq.EstimatedUnitPrice ?? 0m;
+
+                if (unitPrice <= 0)
+                {
+                    var catalogEntry = await _context.SupplierItems
+                        .FirstOrDefaultAsync(si => si.ItemId == itemReq.ItemId && (itemReq.SuggestedSupplierId == null || si.SupplierId == itemReq.SuggestedSupplierId));
+                    if (catalogEntry != null)
+                    {
+                        unitPrice = catalogEntry.UnitPrice;
+                    }
+                }
+
+                prItems.Add(new PurchaseRequisitionItem
+                {
+                    PrId = pr.PrId,
+                    ItemId = itemReq.ItemId,
+                    SuggestedSupplierId = itemReq.SuggestedSupplierId,
+                    RequestedQuantity = itemReq.RequestedQuantity,
+                    PurchaseUomId = uomId,
+                    EstimatedUnitPrice = unitPrice
+                });
+            }
+
+            var estTotal = prItems.Sum(i => i.RequestedQuantity * i.EstimatedUnitPrice);
+
+            pr.Department = string.IsNullOrWhiteSpace(request.Department) ? pr.Department : request.Department.Trim();
+            if (request.RequiredDate != default) pr.RequiredDate = request.RequiredDate;
+            if (!string.IsNullOrWhiteSpace(request.RequestType)) pr.RequestType = request.RequestType.Trim();
+            if (!string.IsNullOrWhiteSpace(request.Priority)) pr.Priority = request.Priority.Trim();
+            pr.Purpose = request.Purpose;
+            pr.Notes = request.Notes;
+            pr.EstimatedTotalAmount = estTotal;
+            pr.UpdatedAt = DateTime.UtcNow;
+            pr.Items = prItems;
+
+            var oldStatus = pr.Status;
+            if (request.SubmitForApproval)
+            {
+                pr.Status = PurchaseRequisitionStatus.PendingApproval;
+            }
+
+            await _context.SaveChangesAsync();
+
+            var reloaded = await _context.PurchaseRequisitions
+                .Include(p => p.Items).ThenInclude(i => i.Item).ThenInclude(it => it.Inventories)
+                .Include(p => p.Items).ThenInclude(i => i.SuggestedSupplier)
+                .Include(p => p.Items).ThenInclude(i => i.PurchaseUom)
+                .FirstAsync(p => p.PrId == pr.PrId);
+
+            _audit.Record(
+                nameof(PurchaseRequisition),
+                pr.PrNumber,
+                request.SubmitForApproval ? "RequisitionResubmittedForApproval" : "RequisitionUpdated",
+                fieldName: "Status",
+                oldValue: EnumDbValue.ToDbValue(oldStatus),
+                newValue: EnumDbValue.ToDbValue(pr.Status));
+
+            return ApiResponse<PurchaseRequisitionResponse>.SuccessResponse(MapToResponse(reloaded), "Purchase requisition updated successfully.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error updating purchase requisition {PrId}", prId);
+            return ApiResponse<PurchaseRequisitionResponse>.FailureResponse($"An error occurred: {ex.Message}");
+        }
+    }
+
     public async Task<ApiResponse<PurchaseRequisitionResponse>> UpdateStatusAsync(int prId, UpdatePurchaseRequisitionStatusRequest request)
     {
         try
         {
             var pr = await _context.PurchaseRequisitions
-                .Include(p => p.Items).ThenInclude(i => i.Item)
+                .Include(p => p.Items).ThenInclude(i => i.Item).ThenInclude(it => it.Inventories)
                 .Include(p => p.Items).ThenInclude(i => i.SuggestedSupplier)
                 .Include(p => p.Items).ThenInclude(i => i.PurchaseUom)
                 .FirstOrDefaultAsync(p => p.PrId == prId);
@@ -196,6 +302,16 @@ public class PurchaseRequisitionService : IPurchaseRequisitionService
 
             var oldStatus = pr.Status;
             pr.Status = newStatus;
+            pr.UpdatedAt = DateTime.UtcNow;
+
+            if (!string.IsNullOrWhiteSpace(request.AdminNotes))
+            {
+                pr.AdminNotes = request.AdminNotes.Trim();
+            }
+            else if (!string.IsNullOrWhiteSpace(request.Comments))
+            {
+                pr.AdminNotes = request.Comments.Trim();
+            }
 
             _context.PurchaseRequisitions.Update(pr);
             await _context.SaveChangesAsync();
@@ -291,7 +407,7 @@ public class PurchaseRequisitionService : IPurchaseRequisitionService
                     {
                         ItemId = i.ItemId,
                         PoItemQuantity = i.RequestedQuantity,
-                        UnitPrice = i.EstimatedUnitPrice,
+                        TotalPrice = i.EstimatedUnitPrice * i.RequestedQuantity,
                         PurchaseUomId = i.PurchaseUomId
                     }).ToList()
                 };
@@ -349,17 +465,24 @@ public class PurchaseRequisitionService : IPurchaseRequisitionService
         RequestDate = p.RequestDate,
         RequiredDate = p.RequiredDate,
         Status = EnumDbValue.ToDbValue(p.Status),
+        RequestType = p.RequestType,
+        Priority = p.Priority,
         Purpose = p.Purpose,
+        Notes = p.Notes,
+        AdminNotes = p.AdminNotes,
         EstimatedTotalAmount = p.EstimatedTotalAmount,
         GeneratedPoNumbers = p.GeneratedPoNumbers,
+        UpdatedAt = p.UpdatedAt,
         Items = p.Items.Select(i => new PurchaseRequisitionItemResponse
         {
             PrItemId = i.PrItemId,
             ItemId = i.ItemId,
+            ItemCode = i.Item?.ItemCode ?? $"SPL-{i.ItemId:D4}",
             ItemName = i.Item?.ItemName ?? $"Item {i.ItemId}",
             SuggestedSupplierId = i.SuggestedSupplierId,
             SuggestedSupplierName = i.SuggestedSupplier?.CompanyName,
             RequestedQuantity = i.RequestedQuantity,
+            ActualInventory = i.Item?.Inventories?.Sum(inv => inv.CurrentStock) ?? 0m,
             PurchaseUomId = i.PurchaseUomId,
             PurchaseUomName = i.PurchaseUom?.Abbreviation ?? "Unit",
             EstimatedUnitPrice = i.EstimatedUnitPrice

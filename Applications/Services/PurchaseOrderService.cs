@@ -81,24 +81,30 @@ public class PurchaseOrderService : IPurchaseOrderService
                     return ApiResponse<PurchaseOrderResponse>.FailureResponse("Quantity must be greater than zero.");
                 }
 
+                // Enforce whole-number quantities
+                if (itemReq.PoItemQuantity != Math.Floor(itemReq.PoItemQuantity))
+                {
+                    return ApiResponse<PurchaseOrderResponse>.FailureResponse("Quantity must be a whole number (no decimals).");
+                }
+
+                if (itemReq.TotalPrice < 0)
+                {
+                    return ApiResponse<PurchaseOrderResponse>.FailureResponse("Total price cannot be negative.");
+                }
+
                 var item = await _context.Items.FindAsync(itemReq.ItemId);
                 if (item == null)
                 {
                     return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Item with ID {itemReq.ItemId} not found.");
                 }
 
-                var unitPrice = itemReq.UnitPrice;
                 var purchaseUomId = itemReq.PurchaseUomId ?? 0;
-
-                if (unitPrice <= 0 || purchaseUomId <= 0)
+                if (purchaseUomId <= 0)
                 {
                     var catalogEntry = await _context.SupplierItems
                         .FirstOrDefaultAsync(si => si.SupplierId == request.SupplierId && si.ItemId == itemReq.ItemId);
                     if (catalogEntry != null)
-                    {
-                        if (unitPrice <= 0) unitPrice = catalogEntry.UnitPrice;
-                        if (purchaseUomId <= 0) purchaseUomId = catalogEntry.PurchaseUomId;
-                    }
+                        purchaseUomId = catalogEntry.PurchaseUomId;
                 }
 
                 if (purchaseUomId <= 0)
@@ -109,13 +115,13 @@ public class PurchaseOrderService : IPurchaseOrderService
                     ItemId = itemReq.ItemId,
                     SupplierId = request.SupplierId,
                     PoItemQuantity = itemReq.PoItemQuantity,
-                    UnitPrice = unitPrice,
+                    TotalPrice = itemReq.TotalPrice,
                     PurchaseUomId = purchaseUomId,
                     ReceivedQuantity = 0
                 });
             }
 
-            var calculatedTotal = poItems.Sum(p => p.PoItemQuantity * p.UnitPrice);
+            var calculatedTotal = poItems.Sum(p => p.TotalPrice);
             var finalTotal = calculatedTotal > 0 ? calculatedTotal : request.TotalAmount;
 
             var orderDate = DateTime.UtcNow;
@@ -124,16 +130,27 @@ public class PurchaseOrderService : IPurchaseOrderService
             // hole in the sequence.
             var order = await _posting.ExecuteAsync(async () =>
             {
+                // Determine initial status: caller may specify "Draft" (save) or "Pending Approval" (submit)
+                var initialStatus = PurchaseOrderStatus.Draft;
+                if (!string.IsNullOrWhiteSpace(request.InitialStatus)
+                    && EnumDbValue.TryParse<PurchaseOrderStatus>(request.InitialStatus, out var parsedInitial)
+                    && parsedInitial != PurchaseOrderStatus.Unspecified)
+                {
+                    initialStatus = parsedInitial;
+                }
+
                 var newOrder = new PurchaseOrder
                 {
                     PoNumber = await _documentNumbers.NextAsync(DocumentType.PurchaseOrder, orderDate),
+                    PrId = request.PrId,
                     SupplierId = request.SupplierId,
                     OrderDate = orderDate,
                     ExpectedArrivalDate = request.ExpectedArrivalDate,
-                    Status = PurchaseOrderStatus.Pending,
+                    Status = initialStatus,
                     PaymentType = request.PaymentType,
                     ProofImageUrl = string.Empty,
                     TotalAmount = finalTotal,
+                    RequestedBy = request.RequestedBy ?? string.Empty,
                     PurchaseOrderItems = poItems
                 };
 
@@ -144,6 +161,7 @@ public class PurchaseOrderService : IPurchaseOrderService
             // Reload relationships to return details
             var reloadedOrder = await _context.PurchaseOrders
                 .Include(o => o.Supplier)
+                .Include(o => o.PurchaseRequisition)
                 .Include(o => o.PurchaseOrderItems)
                     .ThenInclude(poi => poi.Item)
                         .ThenInclude(i => i!.StockUom)
@@ -158,6 +176,32 @@ public class PurchaseOrderService : IPurchaseOrderService
         catch (Exception ex)
         {
             _logger.LogError("Error creating purchase order: {Message}", ex.Message);
+            return ApiResponse<PurchaseOrderResponse>.FailureResponse($"An error occurred: {ex.Message}");
+        }
+    }
+
+    public async Task<ApiResponse<PurchaseOrderResponse>> GetPurchaseOrderByIdAsync(int id)
+    {
+        try
+        {
+            var order = await _context.PurchaseOrders
+                .Include(o => o.Supplier)
+                .Include(o => o.PurchaseRequisition)
+                .Include(o => o.PurchaseOrderItems)
+                    .ThenInclude(poi => poi.Item)
+                        .ThenInclude(i => i!.StockUom)
+                .Include(o => o.PurchaseOrderItems)
+                    .ThenInclude(poi => poi.PurchaseUom)
+                .FirstOrDefaultAsync(o => o.PoId == id);
+
+            if (order == null)
+                return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Purchase order with ID {id} not found.");
+
+            return ApiResponse<PurchaseOrderResponse>.SuccessResponse(MapToResponse(order));
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Error retrieving purchase order {PoId}: {Message}", id, ex.Message);
             return ApiResponse<PurchaseOrderResponse>.FailureResponse($"An error occurred: {ex.Message}");
         }
     }
@@ -258,6 +302,12 @@ public class PurchaseOrderService : IPurchaseOrderService
 
             order.Status = requestedStatus;
 
+            // Save AdminNotes for approval-workflow transitions (Rejected, Returned)
+            if (!string.IsNullOrWhiteSpace(request.AdminNotes))
+            {
+                order.AdminNotes = request.AdminNotes;
+            }
+
             // Handle QA specific fields if it's a QA transition
             if (requestedStatus is PurchaseOrderStatus.Completed or PurchaseOrderStatus.Rejected)
             {
@@ -266,8 +316,6 @@ public class PurchaseOrderService : IPurchaseOrderService
                     order.QaNotes = request.QaNotes;
                     order.QaStatus = request.QaStatus;
                     order.QaInspectedDate = DateTime.UtcNow;
-                    // Fall back to the acting user rather than the literal "Admin", so an unattributed
-                    // inspection is visible as such instead of being credited to an administrator.
                     order.InspectedBy = request.InspectedBy ?? actor.AuditName;
                 }
             }
@@ -372,13 +420,14 @@ public class PurchaseOrderService : IPurchaseOrderService
                 return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Purchase order with ID {id} not found.");
             }
 
-            // Only Pending POs may be edited. Editing an Arrived or Completed order would reset
-            // ReceivedQuantity = 0 on all line items, silently corrupting the receipt history.
-            if (order.Status != PurchaseOrderStatus.Pending)
+            // Only Draft or Returned POs may be edited in the new approval workflow.
+            // Legacy Pending is also allowed for backward compatibility.
+            if (order.Status != PurchaseOrderStatus.Draft
+                && order.Status != PurchaseOrderStatus.Returned
+                && order.Status != PurchaseOrderStatus.Pending)
             {
                 return ApiResponse<PurchaseOrderResponse>.FailureResponse(
-                    $"A {EnumDbValue.ToDbValue(order.Status)} purchase order cannot be edited. " +
-                    "To correct it, void and re-create the order.");
+                    $"A {EnumDbValue.ToDbValue(order.Status)} purchase order cannot be edited.");
             }
 
             // Validate Supplier existence
@@ -401,18 +450,14 @@ public class PurchaseOrderService : IPurchaseOrderService
                 foreach (var itemReq in request.Items)
                 {
                     var item = await _context.Items.FindAsync(itemReq.ItemId);
-                    var unitPrice = itemReq.UnitPrice;
                     var purchaseUomId = itemReq.PurchaseUomId ?? 0;
 
-                    if (unitPrice <= 0 || purchaseUomId <= 0)
+                    if (purchaseUomId <= 0)
                     {
                         var catalogEntry = await _context.SupplierItems
                             .FirstOrDefaultAsync(si => si.SupplierId == request.SupplierId && si.ItemId == itemReq.ItemId);
                         if (catalogEntry != null)
-                        {
-                            if (unitPrice <= 0) unitPrice = catalogEntry.UnitPrice;
-                            if (purchaseUomId <= 0) purchaseUomId = catalogEntry.PurchaseUomId;
-                        }
+                            purchaseUomId = catalogEntry.PurchaseUomId;
                     }
 
                     if (purchaseUomId <= 0 && item != null)
@@ -423,13 +468,13 @@ public class PurchaseOrderService : IPurchaseOrderService
                         ItemId = itemReq.ItemId,
                         SupplierId = request.SupplierId,
                         PoItemQuantity = itemReq.PoItemQuantity,
-                        UnitPrice = unitPrice,
+                        TotalPrice = itemReq.TotalPrice,
                         PurchaseUomId = purchaseUomId,
                         ReceivedQuantity = 0
                     });
                 }
                 order.PurchaseOrderItems = poItems;
-                order.TotalAmount = poItems.Sum(p => p.PoItemQuantity * p.UnitPrice);
+                order.TotalAmount = poItems.Sum(p => p.TotalPrice);
             }
 
             _context.PurchaseOrders.Update(order);
@@ -618,6 +663,8 @@ public class PurchaseOrderService : IPurchaseOrderService
         return new PurchaseOrderResponse
         {
             PoId = order.PoId,
+            PrId = order.PrId,
+            PrNumber = order.PurchaseRequisition?.PrNumber,
             SupplierId = order.SupplierId,
             SupplierName = order.Supplier?.CompanyName ?? string.Empty,
             OrderDate = order.OrderDate,
@@ -627,6 +674,8 @@ public class PurchaseOrderService : IPurchaseOrderService
             PaymentType = order.PaymentType,
             ProofImageUrl = order.ProofImageUrl,
             TotalAmount = order.TotalAmount,
+            RequestedBy = order.RequestedBy,
+            AdminNotes = order.AdminNotes,
             QaNotes = order.QaNotes,
             QaInspectedDate = order.QaInspectedDate,
             QaStatus = order.QaStatus,
@@ -638,11 +687,61 @@ public class PurchaseOrderService : IPurchaseOrderService
                 ItemName = poi.Item?.ItemName ?? string.Empty,
                 PoItemQuantity = poi.PoItemQuantity,
                 ReceivedQuantity = poi.ReceivedQuantity,
-                UnitPrice = poi.UnitPrice,
+                TotalPrice = poi.TotalPrice,
                 PurchaseUomId = poi.PurchaseUomId,
                 PurchaseUomName = poi.PurchaseUom?.Abbreviation ?? poi.Item?.StockUom?.Abbreviation ?? "Unit"
             }).ToList()
         };
+    }
+
+    public async Task<ApiResponse<List<PrItemOrderedQtyResponse>>> GetOrderedQtyForPrAsync(int prId)
+    {
+        try
+        {
+            // Sum quantities from all non-cancelled POs linked to this PR
+            var ordered = await _context.PurchaseOrders
+                .Where(po => po.PrId == prId
+                    && po.Status != PurchaseOrderStatus.Cancelled
+                    && po.Status != PurchaseOrderStatus.Rejected)
+                .SelectMany(po => po.PurchaseOrderItems)
+                .GroupBy(poi => poi.ItemId)
+                .Select(g => new PrItemOrderedQtyResponse
+                {
+                    ItemId = g.Key,
+                    OrderedQty = g.Sum(poi => poi.PoItemQuantity)
+                })
+                .ToListAsync();
+
+            return ApiResponse<List<PrItemOrderedQtyResponse>>.SuccessResponse(ordered);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Error fetching ordered qty for PR {PrId}: {Message}", prId, ex.Message);
+            return ApiResponse<List<PrItemOrderedQtyResponse>>.FailureResponse($"An error occurred: {ex.Message}");
+        }
+    }
+
+    public async Task<ApiResponse<string>> GetNextPoNumberPreviewAsync()
+    {
+        try
+        {
+            var year = DateTime.UtcNow.Year;
+            var docType = EnumDbValue.ToDbValue(DocumentType.PurchaseOrder);
+
+            var currentSeq = await _context.DocumentSequences
+                .Where(s => s.DocType == docType && s.Year == year)
+                .Select(s => (int?)s.LastNumber)
+                .FirstOrDefaultAsync() ?? 0;
+
+            var nextSeq = currentSeq + 1;
+            var preview = DocumentNumbering.Format(DocumentType.PurchaseOrder, year, nextSeq);
+            return ApiResponse<string>.SuccessResponse(preview);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError("Error previewing next PO number: {Message}", ex.Message);
+            return ApiResponse<string>.FailureResponse($"An error occurred: {ex.Message}");
+        }
     }
 
     private static TransactionHistoryResponse MapToTransactionResponse(InventoryMovementLog log)

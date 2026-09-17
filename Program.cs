@@ -259,6 +259,11 @@ if (app.Environment.IsDevelopment())
                 ALTER TABLE ""PurchaseOrders"" ADD COLUMN IF NOT EXISTS ""QaInspectedDate"" timestamp with time zone;
                 ALTER TABLE ""PurchaseOrders"" ADD COLUMN IF NOT EXISTS ""QaNotes"" text;
                 ALTER TABLE ""PurchaseOrders"" ADD COLUMN IF NOT EXISTS ""QaStatus"" text;
+                ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""RequestType"" text;
+                ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""Priority"" text;
+                ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""Notes"" text;
+                ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""AdminNotes"" text;
+                ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""UpdatedAt"" timestamp with time zone;
             ");
         }
         catch (Exception ex)
