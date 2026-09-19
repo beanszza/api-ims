@@ -5,12 +5,14 @@ using System.Threading.Tasks;
 using Domains.Enums;
 using Infrastructures.Persistence;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 
 namespace api_scm.Api.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[EnableRateLimiting("export")]
 public class AuditLogsController : ControllerBase
 {
     private readonly ScmDbContext _context;
@@ -154,7 +156,7 @@ public class AuditLogsController : ControllerBase
                     activity = s.IsActive 
                         ? "Supplier Onboarded & Verified Active" 
                         : "Supplier Status Updated to Inactive",
-                    entityName = $"{s.CompanyName} | Contact: {s.ContactPerson ?? "N/A"} ({s.Email ?? "N/A"}) | Phone: {s.Phone ?? "N/A"}",
+                    entityName = $"{s.CompanyName} | Supplier ID: {s.SupplierId} | Status: {(s.IsActive ? "Active" : "Inactive")}",
                     timestamp = DateTime.Now.AddDays(-s.SupplierId).ToString("MM/dd/yyyy HH:mm:ss"),
                     user = "Procurement Manager"
                 });
@@ -266,6 +268,7 @@ public class AuditLogsController : ControllerBase
                 }
                 return DateTime.MinValue;
             })
+            .Take(250)
             .ToList();
 
         return Ok(finalLogs);

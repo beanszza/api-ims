@@ -447,33 +447,4 @@ public class ItemService : IItemService
             return ApiResponse<EmptyPayload>.FailureResponse($"An error occurred: {ex.Message}");
         }
     }
-
-    public async Task<ApiResponse<EmptyPayload>> ResetSupplyItemsAsync()
-    {
-        try
-        {
-            _logger.LogInformation("Resetting all supply items and document sequences");
-
-            await _context.Database.ExecuteSqlRawAsync(@"
-                TRUNCATE TABLE 
-                    ""SupplierItems"", 
-                    ""RecipeIngredients"", 
-                    ""BatchConsumptions"", 
-                    ""InventoryMovementLogs"", 
-                    ""Inventories"", 
-                    ""PurchaseOrderItems"", 
-                    ""Items"" 
-                RESTART IDENTITY CASCADE;
-
-                DELETE FROM ""DocumentSequences"" WHERE ""DocType"" IN ('Item', 'SPL', 'item');
-            ");
-
-            return ApiResponse<EmptyPayload>.SuccessResponse(new EmptyPayload(), "Supply items reset successfully.");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError($"Error resetting supply items: {ex.Message}");
-            return ApiResponse<EmptyPayload>.FailureResponse($"An error occurred while resetting items: {ex.Message}");
-        }
-    }
 }

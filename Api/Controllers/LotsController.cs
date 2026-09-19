@@ -26,6 +26,8 @@ public class LotsController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10)
     {
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        page = Math.Max(page, 1);
         var result = await _lotService.GetAllLotsAsync(itemName, locationName, status, page, pageSize);
         return result.Success ? Ok(result) : BadRequest(result);
     }

@@ -1,7 +1,9 @@
+using System;
 using api_scm.Contracts.Requests;
 using api_scm.Contracts.Responses;
-using Microsoft.AspNetCore.Mvc;
 using Applications.Interfaces;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace api_scm.Api.Controllers;
 
@@ -47,6 +49,8 @@ public class ItemsController : ControllerBase
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10)
     {
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        page = Math.Max(page, 1);
         var result = await _itemService.GetAllItemsAsync(search, category, isActive, sort, page, pageSize);
         return result.Success ? Ok(result) : StatusCode(500, result);
     }
@@ -59,6 +63,7 @@ public class ItemsController : ControllerBase
     }
 
     [HttpPost]
+    [EnableRateLimiting("write")]
     public async Task<ActionResult<ApiResponse<ItemResponse>>> CreateItem([FromBody] CreateItemRequest request)
     {
         var result = await _itemService.CreateItemAsync(request);
@@ -68,6 +73,7 @@ public class ItemsController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [EnableRateLimiting("write")]
     public async Task<ActionResult<ApiResponse<ItemResponse>>> UpdateItem([FromRoute] int id, [FromBody] UpdateItemRequest request)
     {
         var result = await _itemService.UpdateItemAsync(id, request);
@@ -75,16 +81,10 @@ public class ItemsController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [EnableRateLimiting("write")]
     public async Task<ActionResult<ApiResponse<EmptyPayload>>> DeleteItem([FromRoute] int id)
     {
         var result = await _itemService.DeleteItemAsync(id);
         return result.Success ? Ok(result) : NotFound(result);
-    }
-
-    [HttpPost("reset")]
-    public async Task<ActionResult<ApiResponse<EmptyPayload>>> ResetSupplyItems()
-    {
-        var result = await _itemService.ResetSupplyItemsAsync();
-        return result.Success ? Ok(result) : StatusCode(500, result);
     }
 }

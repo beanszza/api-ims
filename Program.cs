@@ -1,8 +1,10 @@
+using System.Threading.RateLimiting;
 using Applications.Interfaces;
 using Applications.Services;
 using Domains.Enums;
 using Infrastructures.Identity;
 using Infrastructures.Persistence;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
 using Npgsql;
@@ -186,16 +188,112 @@ builder.Services.AddScoped<ILocationService, LocationService>();
 builder.Services.AddScoped<IProductionService, ProductionService>();
 builder.Services.AddScoped<IReportService, ReportService>();
 builder.Services.AddHostedService<ImageCleanupService>();
+// Limit upload size to 10MB to prevent memory exhaustion / DoS
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 10 * 1024 * 1024; // 10 MB
+});
+
+// Configure Rate Limiting
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsync("{\"success\":false,\"message\":\"Too many requests. Please slow down and try again later.\",\"statusCode\":429}", token);
+    };
+
+    // Global rate limit: 60 requests per minute per client IP
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+    {
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? "unknown";
+
+        return RateLimitPartition.GetSlidingWindowLimiter(
+            clientIp,
+            _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 4,
+                QueueLimit = 0
+            });
+    });
+
+    // Stricter policy for heavy export / bulk endpoints: 5 per minute per IP
+    options.AddPolicy("export", httpContext =>
+    {
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? "unknown";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            clientIp,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            });
+    });
+
+    // Stricter policy for mutation/creation: 25 per minute per IP
+    options.AddPolicy("write", httpContext =>
+    {
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? "unknown";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            clientIp,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 25,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            });
+    });
+});
+
+// Configure CORS - restrict allowed origins in production, allow development origins
+var allowedOriginsEnv = Environment.GetEnvironmentVariable("ALLOWED_ORIGINS") 
+    ?? Environment.GetEnvironmentVariable("ALLOWED_ORIGIN");
+var allowedOrigins = new List<string>
+{
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
+    "http://localhost:5006",
+    "https://localhost:3000",
+    "https://localhost:3003"
+};
+if (!string.IsNullOrWhiteSpace(allowedOriginsEnv))
+{
+    allowedOrigins.AddRange(allowedOriginsEnv.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries).Select(o => o.Trim()));
+}
 
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll",
-        policy =>
+    options.AddPolicy("AppCorsPolicy", policy =>
+    {
+        if (builder.Environment.IsDevelopment())
         {
-            policy.AllowAnyOrigin()
-                .AllowAnyMethod()
-                .AllowAnyHeader();
-        });
+            policy.SetIsOriginAllowed(_ => true)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.WithOrigins(allowedOrigins.Distinct().ToArray())
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
+    });
 });
 
 var app = builder.Build();
@@ -443,7 +541,18 @@ if (app.Environment.IsDevelopment())
 
 // app.UseHttpsRedirection();
 app.UsePathBase("/api/scms");
-app.UseCors("AllowAll");
+
+// Security Headers
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Append("X-Frame-Options", "DENY");
+    context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+    await next();
+});
+
+app.UseCors("AppCorsPolicy");
+app.UseRateLimiter();
 app.UseStaticFiles();
 app.UseAuthorization();
 

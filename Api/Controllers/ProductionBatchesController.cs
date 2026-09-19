@@ -1,6 +1,7 @@
 using Api.Contracts.Production;
 using Applications.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Api.Controllers;
 
@@ -58,6 +59,7 @@ public class ProductionBatchesController : ControllerBase
     }
 
     [HttpPost("{id}/images")]
+    [EnableRateLimiting("write")]
     public async Task<IActionResult> UploadImage(int id, IFormFile file)
     {
         try
@@ -65,11 +67,14 @@ public class ProductionBatchesController : ControllerBase
             if (file == null || file.Length == 0)
                 return BadRequest(new { message = "No file uploaded." });
 
-            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png" };
+            if (file.Length > 10 * 1024 * 1024)
+                return BadRequest(new { message = "Image file size cannot exceed 10MB." });
+
+            var allowedExtensions = new[] { ".jpg", ".jpeg", ".png", ".webp" };
             var extension = Path.GetExtension(file.FileName).ToLowerInvariant();
 
             if (!allowedExtensions.Contains(extension))
-                return BadRequest(new { message = "Invalid file type. Only JPG, JPEG, and PNG are allowed." });
+                return BadRequest(new { message = "Invalid file type. Only JPG, JPEG, PNG, and WEBP are allowed." });
 
             // Pass the raw IFormFile down to the service for database storage
             var result = await _productionService.UploadImageAsync(id, file);

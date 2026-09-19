@@ -597,7 +597,7 @@ public class PurchaseOrderService : IPurchaseOrderService
 
             query = ApplyFilter(query, filterType, specificDate);
 
-            var logs = await query.ToListAsync();
+            var logs = await query.OrderByDescending(l => l.Timestamp).Take(5000).ToListAsync();
 
             var builder = new StringBuilder();
             builder.AppendLine("MovementId,ItemId,ItemName,LocationName,ChangeQuantity,ActionType,ReferenceId,UserId,Timestamp");

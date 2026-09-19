@@ -1,7 +1,10 @@
+using System;
+using System.Threading.Tasks;
 using api_scm.Contracts.Requests;
 using api_scm.Contracts.Responses;
-using Microsoft.AspNetCore.Mvc;
 using Applications.Interfaces;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace api_scm.Api.Controllers;
 
@@ -19,6 +22,8 @@ public class SuppliersController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<ApiResponse<PagedData<SupplierResponse>>>> GetAllSuppliers([FromQuery] string? supplierName = null, [FromQuery] bool? isActive = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        page = Math.Max(page, 1);
         var result = await _supplierService.GetAllSuppliersAsync(supplierName, isActive, page, pageSize);
         return result.Success ? Ok(result) : StatusCode(500, result);
     }
@@ -31,6 +36,7 @@ public class SuppliersController : ControllerBase
     }
 
     [HttpPost]
+    [EnableRateLimiting("write")]
     public async Task<ActionResult<ApiResponse<SupplierResponse>>> CreateSupplier([FromBody] CreateSupplierRequest request)
     {
         var result = await _supplierService.CreateSupplierAsync(request);
@@ -40,6 +46,7 @@ public class SuppliersController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [EnableRateLimiting("write")]
     public async Task<ActionResult<ApiResponse<SupplierResponse>>> UpdateSupplier([FromRoute] int id, [FromBody] UpdateSupplierRequest request)
     {
         var result = await _supplierService.UpdateSupplierAsync(id, request);
@@ -47,6 +54,7 @@ public class SuppliersController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [EnableRateLimiting("write")]
     public async Task<ActionResult<ApiResponse<EmptyPayload>>> DeleteSupplier([FromRoute] int id)
     {
         var result = await _supplierService.DeleteSupplierAsync(id);

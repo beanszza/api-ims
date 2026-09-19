@@ -5,6 +5,7 @@ using api_scm.Contracts.Requests;
 using api_scm.Contracts.Responses;
 using Applications.Interfaces;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace api_scm.Api.Controllers;
 
@@ -28,6 +29,8 @@ public class DeliveriesController : ControllerBase
         [FromQuery] int pageSize = 50,
         CancellationToken ct = default)
     {
+        pageSize = Math.Clamp(pageSize, 1, 100);
+        page = Math.Max(page, 1);
         var result = await _deliveryService.GetDeliveriesAsync(poId, status, page, pageSize, ct);
         return result.Success ? Ok(result) : BadRequest(result);
     }
@@ -50,6 +53,7 @@ public class DeliveriesController : ControllerBase
 
     /// <summary>Schedules a new delivery shipment against an approved or ordered PO.</summary>
     [HttpPost]
+    [EnableRateLimiting("write")]
     public async Task<ActionResult<ApiResponse<DeliveryResponse>>> Create(
         [FromBody] CreateDeliveryRequest request,
         CancellationToken ct = default)
@@ -63,6 +67,7 @@ public class DeliveriesController : ControllerBase
 
     /// <summary>Marks a scheduled delivery as dispatched / in-transit.</summary>
     [HttpPut("{id:int}/dispatch")]
+    [EnableRateLimiting("write")]
     public async Task<ActionResult<ApiResponse<DeliveryResponse>>> MarkDispatched(
         int id,
         [FromBody] MarkDispatchedRequest request,
@@ -77,6 +82,7 @@ public class DeliveriesController : ControllerBase
 
     /// <summary>Marks an in-transit delivery as arrived at our receiving location.</summary>
     [HttpPut("{id:int}/arrive")]
+    [EnableRateLimiting("write")]
     public async Task<ActionResult<ApiResponse<DeliveryResponse>>> MarkArrived(
         int id,
         [FromBody] MarkArrivedRequest request,
@@ -91,6 +97,7 @@ public class DeliveriesController : ControllerBase
 
     /// <summary>Cancels a delivery shipment before it arrives.</summary>
     [HttpPut("{id:int}/cancel")]
+    [EnableRateLimiting("write")]
     public async Task<ActionResult<ApiResponse<DeliveryResponse>>> Cancel(
         int id,
         [FromBody] CancelDeliveryRequest? request,

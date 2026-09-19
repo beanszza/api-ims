@@ -20,6 +20,8 @@ public class InventoriesController : ControllerBase
     [HttpGet]
     public async Task<ActionResult<ApiResponse<PagedData<InventoryResponse>>>> GetAllInventories([FromQuery] string? categoryName = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
     {
+        pageSize = System.Math.Clamp(pageSize, 1, 100);
+        page = System.Math.Max(page, 1);
         var result = await _inventoryService.GetAllInventoriesAsync(categoryName, page, pageSize);
         if (result.Success)
         {
