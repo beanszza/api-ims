@@ -9,6 +9,8 @@ public class CreateGoodsReceiptRequest
     [Required]
     public int PoId { get; set; }
 
+    public int? DeliveryId { get; set; }
+
     public int? ReceivingLocationId { get; set; }
 
     [Required]

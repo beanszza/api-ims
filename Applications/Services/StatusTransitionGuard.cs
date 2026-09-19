@@ -27,7 +27,8 @@ public sealed class StatusTransitionGuard : IStatusTransitionGuard
         [typeof(QcStatus)] = BuildQcMap(),
         [typeof(ReceiptStatus)] = BuildReceiptMap(),
         [typeof(LotStatus)] = BuildLotMap(),
-        [typeof(ApprovalStatus)] = BuildApprovalMap()
+        [typeof(ApprovalStatus)] = BuildApprovalMap(),
+        [typeof(DeliveryStatus)] = BuildDeliveryMap()
     };
 
     public bool CanTransition<TEnum>(TEnum from, TEnum to) where TEnum : struct, Enum
@@ -228,5 +229,13 @@ public sealed class StatusTransitionGuard : IStatusTransitionGuard
         [ApprovalStatus.AutoApproved] = [],
         [ApprovalStatus.Rejected] = [],
         [ApprovalStatus.Withdrawn] = []
+    };
+
+    private static Dictionary<DeliveryStatus, DeliveryStatus[]> BuildDeliveryMap() => new()
+    {
+        [DeliveryStatus.Scheduled] = [DeliveryStatus.InTransit, DeliveryStatus.Cancelled],
+        [DeliveryStatus.InTransit] = [DeliveryStatus.Arrived, DeliveryStatus.Cancelled],
+        [DeliveryStatus.Arrived] = [],
+        [DeliveryStatus.Cancelled] = []
     };
 }

@@ -168,6 +168,7 @@ builder.Services.AddScoped<ISupplierItemService, SupplierItemService>();
 builder.Services.AddScoped<ISupplierDocumentService, SupplierDocumentService>();
 builder.Services.AddScoped<IApprovalService, ApprovalService>();
 builder.Services.AddScoped<IPurchaseRequisitionService, PurchaseRequisitionService>();
+builder.Services.AddScoped<IDeliveryService, DeliveryService>();
 builder.Services.AddScoped<IGoodsReceiptService, GoodsReceiptService>();
 builder.Services.AddScoped<IQualityInspectionService, QualityInspectionService>();
 builder.Services.AddScoped<INcrService, NcrService>();

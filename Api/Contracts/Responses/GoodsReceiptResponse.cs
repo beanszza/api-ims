@@ -9,6 +9,8 @@ public class GoodsReceiptResponse
     public string GrnNumber { get; set; } = string.Empty;
     public int PoId { get; set; }
     public string PoNumber { get; set; } = string.Empty;
+    public int? DeliveryId { get; set; }
+    public string? DeliveryNumber { get; set; }
     public int SupplierId { get; set; }
     public string SupplierName { get; set; } = string.Empty;
     public int ReceivingLocationId { get; set; }

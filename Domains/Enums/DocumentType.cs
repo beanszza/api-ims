@@ -25,7 +25,8 @@ public enum DocumentType
     StockAdjustment = 14,
     Item = 15,
     Supplier = 16,
-    Recipe = 17
+    Recipe = 17,
+    Delivery = 18
 }
 
 /// <summary>
@@ -64,6 +65,7 @@ public static class DocumentNumbering
         DocumentType.Item => "SPL",
         DocumentType.Supplier => "SUP",
         DocumentType.Recipe => "BOM",
+        DocumentType.Delivery => "DEL",
         _ => throw new ArgumentOutOfRangeException(
             nameof(documentType), documentType, "This document type has no number prefix.")
     };

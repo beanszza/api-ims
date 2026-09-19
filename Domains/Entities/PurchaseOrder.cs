@@ -38,4 +38,5 @@ public class PurchaseOrder
 
     public Supplier? Supplier { get; set; }
     public ICollection<PurchaseOrderItem> PurchaseOrderItems { get; set; } = new List<PurchaseOrderItem>();
+    public ICollection<Delivery> Deliveries { get; set; } = new List<Delivery>();
 }

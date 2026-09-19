@@ -50,6 +50,7 @@ public class GoodsReceiptService : IGoodsReceiptService
         {
             var query = _context.GoodsReceipts
                 .Include(g => g.PurchaseOrder)
+                .Include(g => g.Delivery)
                 .Include(g => g.Supplier)
                 .Include(g => g.ReceivingLocation)
                 .Include(g => g.Items).ThenInclude(i => i.Item)
@@ -76,6 +77,7 @@ public class GoodsReceiptService : IGoodsReceiptService
         {
             var grn = await _context.GoodsReceipts
                 .Include(g => g.PurchaseOrder)
+                .Include(g => g.Delivery)
                 .Include(g => g.Supplier)
                 .Include(g => g.ReceivingLocation)
                 .Include(g => g.Items).ThenInclude(i => i.Item)
@@ -124,6 +126,7 @@ public class GoodsReceiptService : IGoodsReceiptService
             {
                 GrnNumber = grnNumber,
                 PoId = po.PoId,
+                DeliveryId = request.DeliveryId,
                 SupplierId = po.SupplierId,
                 ReceivingLocationId = receivingLocationId,
                 ReceivedDate = receiveDate,
@@ -211,6 +214,7 @@ public class GoodsReceiptService : IGoodsReceiptService
 
             var reloaded = await _context.GoodsReceipts
                 .Include(g => g.PurchaseOrder)
+                .Include(g => g.Delivery)
                 .Include(g => g.Supplier)
                 .Include(g => g.ReceivingLocation)
                 .Include(g => g.Items).ThenInclude(i => i.Item)
@@ -235,6 +239,8 @@ public class GoodsReceiptService : IGoodsReceiptService
         GrnNumber = g.GrnNumber,
         PoId = g.PoId,
         PoNumber = g.PurchaseOrder?.PoNumber ?? $"PO-{g.PoId}",
+        DeliveryId = g.DeliveryId,
+        DeliveryNumber = g.Delivery?.DeliveryNumber,
         SupplierId = g.SupplierId,
         SupplierName = g.Supplier?.CompanyName ?? string.Empty,
         ReceivingLocationId = g.ReceivingLocationId,

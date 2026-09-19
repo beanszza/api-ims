@@ -14,6 +14,9 @@ public class GoodsReceipt
     public int PoId { get; set; }
     public PurchaseOrder PurchaseOrder { get; set; } = null!;
 
+    public int? DeliveryId { get; set; }
+    public Delivery? Delivery { get; set; }
+
     public int SupplierId { get; set; }
     public Supplier Supplier { get; set; } = null!;
 

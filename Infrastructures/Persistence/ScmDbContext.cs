@@ -26,6 +26,8 @@ public class ScmDbContext : DbContext
     public DbSet<PurchaseRequisitionItem> PurchaseRequisitionItems { get; set; }
     public DbSet<PurchaseOrder> PurchaseOrders { get; set; }
     public DbSet<PurchaseOrderItem> PurchaseOrderItems { get; set; }
+    public DbSet<Delivery> Deliveries { get; set; }
+    public DbSet<DeliveryItem> DeliveryItems { get; set; }
     public DbSet<GoodsReceipt> GoodsReceipts { get; set; }
     public DbSet<GoodsReceiptItem> GoodsReceiptItems { get; set; }
     public DbSet<QualityInspection> QualityInspections { get; set; }
@@ -75,6 +77,8 @@ public class ScmDbContext : DbContext
         modelBuilder.Entity<InventoryMovementLog>().HasKey(e => e.MovementId);
         modelBuilder.Entity<PurchaseOrder>().HasKey(e => e.PoId);
         modelBuilder.Entity<PurchaseOrderItem>().HasKey(e => e.PoItemId);
+        modelBuilder.Entity<Delivery>().HasKey(e => e.DeliveryId);
+        modelBuilder.Entity<DeliveryItem>().HasKey(e => e.DeliveryItemId);
         modelBuilder.Entity<RecipeIngredient>().HasKey(e => e.IngredientId);
         modelBuilder.Entity<BatchConsumption>().HasKey(e => e.BatchConsumptionId);
         modelBuilder.Entity<StockTransfer>().HasKey(e => e.TransferId);
@@ -135,6 +139,7 @@ public class ScmDbContext : DbContext
         ConfigureSupplierDocuments(modelBuilder);
         ConfigureApprovalRequests(modelBuilder);
         ConfigurePurchaseRequisitions(modelBuilder);
+        ConfigureDeliveries(modelBuilder);
         ConfigureGoodsReceipts(modelBuilder);
         ConfigureQualityInspections(modelBuilder);
         ConfigureNonConformanceReports(modelBuilder);
@@ -442,6 +447,7 @@ public class ScmDbContext : DbContext
         modelBuilder.Entity<NonConformanceReport>().Property(e => e.DefectiveQuantity).HasPrecision(precision, scale);
 
         modelBuilder.Entity<ReturnToVendor>().Property(e => e.ReturnedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<DeliveryItem>().Property(e => e.DeclaredQuantity).HasPrecision(precision, scale);
 
         modelBuilder.Entity<DisposalRecord>().Property(e => e.TotalCost).HasPrecision(18, 4);
         modelBuilder.Entity<DisposalRecordItem>().Property(e => e.QuantityDisposed).HasPrecision(precision, scale);
@@ -510,6 +516,11 @@ public class ScmDbContext : DbContext
         modelBuilder.Entity<PurchaseRequisition>()
             .Property(e => e.Status)
             .HasConversion(EnumTextConverter<PurchaseRequisitionStatus>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<Delivery>()
+            .Property(e => e.Status)
+            .HasConversion(EnumTextConverter<DeliveryStatus>())
             .HasColumnType("text");
 
         modelBuilder.Entity<GoodsReceipt>()
@@ -701,6 +712,67 @@ public class ScmDbContext : DbContext
     }
 
     /// <summary>
+    /// Configures Delivery shipment events.
+    /// </summary>
+    private static void ConfigureDeliveries(ModelBuilder modelBuilder)
+    {
+        var delivery = modelBuilder.Entity<Delivery>();
+
+        delivery.HasKey(d => d.DeliveryId);
+
+        delivery.HasIndex(d => d.DeliveryNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_Deliveries_DeliveryNumber");
+
+        delivery.HasIndex(d => d.PoId)
+            .HasDatabaseName("IX_Deliveries_PoId");
+
+        delivery.HasIndex(d => d.Status)
+            .HasDatabaseName("IX_Deliveries_Status");
+
+        delivery.HasOne(d => d.PurchaseOrder)
+            .WithMany(p => p.Deliveries)
+            .HasForeignKey(d => d.PoId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        delivery.HasOne(d => d.Supplier)
+            .WithMany()
+            .HasForeignKey(d => d.SupplierId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        delivery.HasOne(d => d.ReceivingLocation)
+            .WithMany()
+            .HasForeignKey(d => d.ReceivingLocationId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        delivery.HasMany(d => d.Items)
+            .WithOne(i => i.Delivery)
+            .HasForeignKey(i => i.DeliveryId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var item = modelBuilder.Entity<DeliveryItem>();
+
+        item.HasKey(i => i.DeliveryItemId);
+
+        item.Property(i => i.DeclaredQuantity).HasPrecision(18, 3);
+
+        item.HasOne(i => i.PurchaseOrderItem)
+            .WithMany()
+            .HasForeignKey(i => i.PoItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        item.HasOne(i => i.Item)
+            .WithMany()
+            .HasForeignKey(i => i.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        item.HasOne(i => i.PurchaseUom)
+            .WithMany()
+            .HasForeignKey(i => i.PurchaseUomId)
+            .OnDelete(DeleteBehavior.Restrict);
+    }
+
+    /// <summary>
     /// Configures Goods Receipt Notes (GRN).
     /// </summary>
     private static void ConfigureGoodsReceipts(ModelBuilder modelBuilder)
@@ -716,10 +788,18 @@ public class ScmDbContext : DbContext
         grn.HasIndex(g => g.PoId)
             .HasDatabaseName("IX_GoodsReceipts_PoId");
 
+        grn.HasIndex(g => g.DeliveryId)
+            .HasDatabaseName("IX_GoodsReceipts_DeliveryId");
+
         grn.HasOne(g => g.PurchaseOrder)
             .WithMany()
             .HasForeignKey(g => g.PoId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        grn.HasOne(g => g.Delivery)
+            .WithMany(d => d.GoodsReceipts)
+            .HasForeignKey(g => g.DeliveryId)
+            .OnDelete(DeleteBehavior.SetNull);
 
         grn.HasOne(g => g.Supplier)
             .WithMany()
