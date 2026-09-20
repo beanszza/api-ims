@@ -1,165 +1,17 @@
+using System.Threading.RateLimiting;
 using Applications.Interfaces;
 using Applications.Services;
+using Domains.Enums;
+using Infrastructures.Identity;
 using Infrastructures.Persistence;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi;
+using Npgsql;
 
 var builder = WebApplication.CreateBuilder(args);
 
-builder.Services.AddControllers();
-builder.Services.AddOpenApi(options =>
-{
-    options.AddDocumentTransformer((document, _, _) =>
-    {
-        document.Info = new OpenApiInfo
-        {
-            Title = "R3B2P SCM API",
-            Version = "v1",
-            Description =
-                "Supply chain management API (items, suppliers, inventory). " +
-                "Use the same host/port you use to open Swagger when calling endpoints from \"Try it out\"."
-        };
-        return Task.CompletedTask;
-    });
-});
-
-var useInMemory = string.Equals(Environment.GetEnvironmentVariable("USE_IN_MEMORY_DB"), "true", StringComparison.OrdinalIgnoreCase);
-
-builder.Services.AddDbContext<ScmDbContext>(options =>
-{
-    if (useInMemory)
-    {
-        options.UseInMemoryDatabase("scm_db");
-    }
-    else
-    {
-        var connectionString = ResolveScmConnectionString(builder.Configuration);
-        options.UseNpgsql(
-            connectionString,
-            npg => npg.EnableRetryOnFailure(5, TimeSpan.FromSeconds(10), null));
-    }
-});
-
-builder.Services.AddScoped<IItemService, ItemService>();
-builder.Services.AddScoped<ISupplierService, SupplierService>();
-builder.Services.AddScoped<IRecipeService, RecipeService>();
-builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
-
-builder.Services.AddCors(options =>
-{
-    options.AddPolicy("AllowAll",
-        policy =>
-        {
-            policy.AllowAnyOrigin()
-                .AllowAnyMethod()
-                .AllowAnyHeader();
-        });
-});
-
-var app = builder.Build();
-
-if (app.Environment.IsDevelopment())
-{
-    using var scope = app.Services.CreateScope();
-    var db = scope.ServiceProvider.GetRequiredService<ScmDbContext>();
-    var migrateLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Database");
-
-    var useInMemoryDb = string.Equals(Environment.GetEnvironmentVariable("USE_IN_MEMORY_DB"), "true", StringComparison.OrdinalIgnoreCase);
-    bool isDbReady = false;
-
-    if (useInMemoryDb)
-    {
-        try
-        {
-            db.Database.EnsureCreated();
-            migrateLogger.LogInformation("SCM InMemory database created.");
-            isDbReady = true;
-        }
-        catch (Exception ex)
-        {
-            migrateLogger.LogError(ex, "Failed to initialize SCM InMemory database.");
-        }
-    }
-    else
-    {
-        try
-        {
-            db.Database.Migrate();
-            migrateLogger.LogInformation("SCM database migrations applied.");
-            isDbReady = true;
-        }
-        catch (Exception ex)
-        {
-            migrateLogger.LogError(ex,
-                "SCM database Migrate() failed. API will start; fix the connection and restart, or run migrations manually.");
-        }
-    }
-
-    if (isDbReady)
-    {
-        try
-        {
-            // Seed Master Data if empty
-            if (!db.Categories.Any())
-            {
-                db.Categories.AddRange(
-                    new Domains.Entities.Category { CategoryName = "Raw Materials", Description = "Raw materials for production" },
-                    new Domains.Entities.Category { CategoryName = "Tools and Supplies", Description = "Tools and supplies used in operations" }
-                );
-                db.SaveChanges();
-                migrateLogger.LogInformation("Categories seeded successfully.");
-            }
-
-            if (!db.UnitOfMeasures.Any())
-            {
-                db.UnitOfMeasures.AddRange(
-                    new Domains.Entities.UnitOfMeasure { Name = "Kilogram", Abbreviation = "kg" },
-                    new Domains.Entities.UnitOfMeasure { Name = "Piece", Abbreviation = "pcs" },
-                    new Domains.Entities.UnitOfMeasure { Name = "Litre", Abbreviation = "L" },
-                    new Domains.Entities.UnitOfMeasure { Name = "Meter", Abbreviation = "m" }
-                );
-                db.SaveChanges();
-                migrateLogger.LogInformation("Unit of Measures seeded successfully.");
-            }
-
-            if (!db.Locations.Any())
-            {
-                db.Locations.Add(new Domains.Entities.Location { LocationName = "Main Warehouse", LocationType = "Storage" });
-                db.SaveChanges();
-                migrateLogger.LogInformation("Locations seeded successfully.");
-            }
-
-            if (!db.Drivers.Any())
-            {
-                db.Drivers.Add(new Domains.Entities.Driver { DriverName = "Default Driver", Number = "DRV-001" });
-                db.SaveChanges();
-                migrateLogger.LogInformation("Drivers seeded successfully.");
-            }
-        }
-        catch (Exception ex)
-        {
-            migrateLogger.LogError(ex, "Failed to seed SCM master data.");
-        }
-    }
-}
-
-// app.UseHttpsRedirection();
-app.UseCors("AllowAll");
-app.UseAuthorization();
-
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-    app.UseSwaggerUi(options =>
-    {
-        options.DocumentPath = "/openapi/v1.json";
-    });
-}
-
-app.MapControllers();
-
-app.Run();
-
+// Helper functions (moved to top so they can be used early)
 static string ResolveScmConnectionString(IConfiguration configuration)
 {
     var host = Environment.GetEnvironmentVariable("POSTGRES_DB_HOST");
@@ -215,3 +67,504 @@ static string AppendNpgsqlSslModeForDevContainers(string connectionString)
 
     return connectionString;
 }
+
+// Ensure database exists before running migrations
+try
+{
+    var connectionString = ResolveScmConnectionString(builder.Configuration);
+    var connBuilder = new NpgsqlConnectionStringBuilder(connectionString);
+    var dbName = connBuilder.Database;
+    connBuilder.Database = "postgres";
+    
+    using (var connection = new NpgsqlConnection(connBuilder.ConnectionString))
+    {
+        connection.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"CREATE DATABASE \"{dbName}\" TEMPLATE template0;";
+        try 
+        { 
+            command.ExecuteNonQuery();
+            Console.WriteLine($"✓ Database '{dbName}' created successfully.");
+        } 
+        catch (Exception ex)
+        {
+            Console.WriteLine($"ℹ Database '{dbName}' may already exist or error: {ex.Message}");
+        }
+    }
+    
+    // Give the database a moment to be ready
+    System.Threading.Thread.Sleep(1000);
+}
+catch (Exception ex)
+{
+    Console.WriteLine($"⚠ Warning: Could not auto-create database: {ex.Message}");
+}
+
+builder.Services.AddControllers();
+builder.Services.AddOpenApi(options =>
+{
+    options.AddDocumentTransformer((document, _, _) =>
+    {
+        document.Info = new OpenApiInfo
+        {
+            Title = "R3B2P SCM API",
+            Version = "v1",
+            Description =
+                "Supply chain management API (items, suppliers, inventory). " +
+                "Use the same host/port you use to open Swagger when calling endpoints from \"Try it out\"."
+        };
+        return Task.CompletedTask;
+    });
+});
+
+var useInMemory = string.Equals(Environment.GetEnvironmentVariable("USE_IN_MEMORY_DB"), "true", StringComparison.OrdinalIgnoreCase);
+
+builder.Services.AddDbContext<ScmDbContext>(options =>
+{
+    if (useInMemory)
+    {
+        options.UseInMemoryDatabase("scm_db");
+    }
+    else
+    {
+        var connectionString = ResolveScmConnectionString(builder.Configuration);
+        options.UseNpgsql(
+            connectionString,
+            npg => npg.EnableRetryOnFailure(5, TimeSpan.FromSeconds(10), null));
+    }
+});
+
+
+
+// Single authority on legal document status changes. Stateless, so a singleton is enough.
+builder.Services.AddSingleton<IStatusTransitionGuard, StatusTransitionGuard>();
+
+// Scoped: caches units per request and reads through the request's DbContext.
+builder.Services.AddScoped<IUomConversionService, UomConversionService>();
+builder.Services.AddScoped<IDocumentNumberService, DocumentNumberService>();
+builder.Services.AddScoped<IPostingTransaction, PostingTransaction>();
+
+// Attribution. HttpContextCurrentUserService reads the claims on the request; until an authentication
+// scheme populates HttpContext.User it resolves to CurrentUser.Anonymous, which is recorded honestly
+// rather than being disguised as a real person the way the old hardcoded user id was.
+builder.Services.AddHttpContextAccessor();
+builder.Services.AddScoped<ICurrentUserService, HttpContextCurrentUserService>();
+builder.Services.AddScoped<IAuditTrail, AuditTrail>();
+
+// Resolves locations by role so posting never guesses at, or invents, a location.
+builder.Services.AddScoped<ILocationResolver, LocationResolver>();
+builder.Services.AddScoped<ILotCodeGenerator, LotCodeGenerator>();
+
+// The only component permitted to change a lot's quantity. Every stock movement goes through it, so
+// every movement is written the same way, is always accompanied by a ledger row, and is always attributed.
+builder.Services.AddScoped<IStockPostingService, StockPostingService>();
+
+builder.Services.AddScoped<IItemService, ItemService>();
+builder.Services.AddScoped<ISupplierService, SupplierService>();
+builder.Services.AddScoped<IRecipeService, RecipeService>();
+builder.Services.AddScoped<IPurchaseOrderService, PurchaseOrderService>();
+builder.Services.AddScoped<IStockTransferService, StockTransferService>();
+builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<ILotService, LotService>();
+builder.Services.AddScoped<ISupplierItemService, SupplierItemService>();
+builder.Services.AddScoped<ISupplierDocumentService, SupplierDocumentService>();
+builder.Services.AddScoped<IApprovalService, ApprovalService>();
+builder.Services.AddScoped<IPurchaseRequisitionService, PurchaseRequisitionService>();
+builder.Services.AddScoped<IDeliveryService, DeliveryService>();
+builder.Services.AddScoped<IGoodsReceiptService, GoodsReceiptService>();
+builder.Services.AddScoped<IQualityInspectionService, QualityInspectionService>();
+builder.Services.AddScoped<INcrService, NcrService>();
+builder.Services.AddScoped<ISupplierScorecardService, SupplierScorecardService>();
+builder.Services.AddScoped<IAllocationService, AllocationService>();
+builder.Services.AddScoped<IDisposalService, DisposalService>();
+builder.Services.AddScoped<IBranchDistributionService, BranchDistributionService>();
+builder.Services.AddScoped<ITraceabilityService, TraceabilityService>();
+builder.Services.AddScoped<IRecallService, RecallService>();
+builder.Services.AddScoped<IValuationService, ValuationService>();
+builder.Services.AddScoped<ICycleCountService, CycleCountService>();
+builder.Services.AddScoped<IMrpService, MrpService>();
+builder.Services.AddScoped<IFinishedProductService, FinishedProductService>();
+builder.Services.AddScoped<ILocationService, LocationService>();
+builder.Services.AddScoped<IProductionService, ProductionService>();
+builder.Services.AddScoped<IReportService, ReportService>();
+builder.Services.AddHostedService<ImageCleanupService>();
+// Limit upload size to 10MB to prevent memory exhaustion / DoS
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MultipartBodyLengthLimit = 10 * 1024 * 1024; // 10 MB
+});
+
+// Configure Rate Limiting
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.ContentType = "application/json";
+        await context.HttpContext.Response.WriteAsync("{\"success\":false,\"message\":\"Too many requests. Please slow down and try again later.\",\"statusCode\":429}", token);
+    };
+
+    // Global rate limit: 60 requests per minute per client IP
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
+    {
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? "unknown";
+
+        return RateLimitPartition.GetSlidingWindowLimiter(
+            clientIp,
+            _ => new SlidingWindowRateLimiterOptions
+            {
+                PermitLimit = 60,
+                Window = TimeSpan.FromMinutes(1),
+                SegmentsPerWindow = 4,
+                QueueLimit = 0
+            });
+    });
+
+    // Stricter policy for heavy export / bulk endpoints: 5 per minute per IP
+    options.AddPolicy("export", httpContext =>
+    {
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? "unknown";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            clientIp,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 5,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            });
+    });
+
+    // Stricter policy for mutation/creation: 25 per minute per IP
+    options.AddPolicy("write", httpContext =>
+    {
+        var clientIp = httpContext.Connection.RemoteIpAddress?.ToString()
+            ?? httpContext.Request.Headers["X-Forwarded-For"].FirstOrDefault()
+            ?? "unknown";
+
+        return RateLimitPartition.GetFixedWindowLimiter(
+            clientIp,
+            _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 25,
+                Window = TimeSpan.FromMinutes(1),
+                QueueLimit = 0
+            });
+    });
+});
+
+// Configure CORS - restrict allowed origins in production, allow development origins
+var allowedOriginsEnv = Environment.GetEnvironmentVariable("ALLOWED_ORIGINS") 
+    ?? Environment.GetEnvironmentVariable("ALLOWED_ORIGIN");
+var allowedOrigins = new List<string>
+{
+    "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
+    "http://localhost:5006",
+    "https://localhost:3000",
+    "https://localhost:3003"
+};
+if (!string.IsNullOrWhiteSpace(allowedOriginsEnv))
+{
+    allowedOrigins.AddRange(allowedOriginsEnv.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries).Select(o => o.Trim()));
+}
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AppCorsPolicy", policy =>
+    {
+        if (builder.Environment.IsDevelopment())
+        {
+            policy.SetIsOriginAllowed(_ => true)
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
+        else
+        {
+            policy.WithOrigins(allowedOrigins.Distinct().ToArray())
+                  .AllowAnyMethod()
+                  .AllowAnyHeader()
+                  .AllowCredentials();
+        }
+    });
+});
+
+var app = builder.Build();
+
+if (app.Environment.IsDevelopment())
+{
+    using var scope = app.Services.CreateScope();
+    var db = scope.ServiceProvider.GetRequiredService<ScmDbContext>();
+    var migrateLogger = scope.ServiceProvider.GetRequiredService<ILoggerFactory>().CreateLogger("Database");
+
+    var useInMemoryDb = string.Equals(Environment.GetEnvironmentVariable("USE_IN_MEMORY_DB"), "true", StringComparison.OrdinalIgnoreCase);
+    bool isDbReady = false;
+
+    if (useInMemoryDb)
+    {
+        try
+        {
+            db.Database.EnsureCreated();
+            migrateLogger.LogInformation("SCM InMemory database created.");
+            isDbReady = true;
+        }
+        catch (Exception ex)
+        {
+            migrateLogger.LogError(ex, "Failed to initialize SCM InMemory database.");
+        }
+    }
+    else
+    {
+        try
+        {
+            Console.WriteLine("→ Attempting to run database migrations...");
+            db.Database.Migrate();
+            migrateLogger.LogInformation("✓ SCM database migrations applied.");
+            isDbReady = true;
+        }
+        catch (Exception ex)
+        {
+            migrateLogger.LogError(ex, "✗ Migrations failed, trying EnsureCreated()...");
+            Console.WriteLine($"✗ Migrations failed: {ex.Message}");
+            
+            try
+            {
+                Console.WriteLine("→ Fallback: Running EnsureCreated()...");
+                db.Database.EnsureCreated();
+                migrateLogger.LogInformation("✓ Database schema created via EnsureCreated().");
+                isDbReady = true;
+            }
+            catch (Exception ex2)
+            {
+                migrateLogger.LogError(ex2, "✗ EnsureCreated() also failed.");
+                Console.WriteLine($"✗ EnsureCreated() failed: {ex2.Message}");
+            }
+        }
+    }
+
+    if (isDbReady)
+    {
+        try
+        {
+            db.Database.ExecuteSqlRaw(@"
+                ALTER TABLE ""PurchaseOrders"" ADD COLUMN IF NOT EXISTS ""InspectedBy"" text;
+                ALTER TABLE ""PurchaseOrders"" ADD COLUMN IF NOT EXISTS ""QaInspectedDate"" timestamp with time zone;
+                ALTER TABLE ""PurchaseOrders"" ADD COLUMN IF NOT EXISTS ""QaNotes"" text;
+                ALTER TABLE ""PurchaseOrders"" ADD COLUMN IF NOT EXISTS ""QaStatus"" text;
+                ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""RequestType"" text;
+                ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""Priority"" text;
+                ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""Notes"" text;
+                ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""AdminNotes"" text;
+                ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""UpdatedAt"" timestamp with time zone;
+            ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Could not alter PurchaseOrders table: {ex.Message}");
+        }
+
+        try
+        {
+            // Seed Master Data if empty
+            if (!db.Categories.Any())
+            {
+                Console.WriteLine("→ Seeding Categories...");
+                db.Categories.AddRange(
+                    new Domains.Entities.Category { CategoryName = "Raw Materials", Description = "Raw materials for production" },
+                    new Domains.Entities.Category { CategoryName = "Tools and Supplies", Description = "Tools and supplies used in operations" }
+                );
+                db.SaveChanges();
+                migrateLogger.LogInformation("✓ Categories seeded successfully.");
+                Console.WriteLine("✓ Categories seeded.");
+            }
+
+            // Ensure all target Unit of Measures exist, each with the dimension and factor that make
+            // conversion possible. Factors are "how many base units make one of this unit", where the
+            // bases are kg, L, pcs and m.
+            UnitOfMeasureSeeder.Seed(db, migrateLogger);
+            UnitOfMeasureSeeder.BackfillItemStockUom(db, migrateLogger);
+
+            // Locations the system resolves by role (receiving, production, WIP, quarantine, finished
+            // goods, disposal). Seeded before anything that posts stock, because posting now looks these
+            // up instead of creating them on the fly.
+            LocationSeeder.Seed(db, migrateLogger);
+
+            // Supplier catalog linking vendors to items with pricing, pack sizes, and lead times.
+            SupplierItemSeeder.Seed(db, migrateLogger);
+
+            // Supplier compliance documents (FDA LTO, Sanitary Permits, COA).
+            SupplierDocumentSeeder.Seed(db, migrateLogger);
+
+            if (!db.Locations.Any(l => l.LocationName == "Branch 1 - Quezon City"))
+            {
+                Console.WriteLine("→ Seeding Testing Locations...");
+                db.Locations.Add(new Domains.Entities.Location { LocationName = "Branch 1 - Quezon City", LocationType = LocationType.Branch, Status = "Active" });
+                db.Locations.Add(new Domains.Entities.Location { LocationName = "Branch 2 - Makati", LocationType = LocationType.Branch, Status = "Active" });
+                db.Locations.Add(new Domains.Entities.Location { LocationName = "Bazaar Booth - SM North", LocationType = LocationType.Bazaar, Status = "Active" });
+                db.SaveChanges();
+                migrateLogger.LogInformation("✓ Testing Locations seeded successfully.");
+                Console.WriteLine("✓ Testing Locations seeded.");
+            }
+
+            // Every branch needs an in-transit lane so dispatched stock has somewhere to sit before the
+            // destination confirms receipt.
+            LocationSeeder.SeedInTransitLanesForBranches(db, migrateLogger);
+
+            if (!db.Drivers.Any())
+            {
+                Console.WriteLine("→ Seeding Drivers...");
+                db.Drivers.Add(new Domains.Entities.Driver { DriverName = "Default Driver", Number = "DRV-001" });
+                db.SaveChanges();
+                migrateLogger.LogInformation("✓ Drivers seeded successfully.");
+                Console.WriteLine("✓ Drivers seeded.");
+            }
+
+            // Quick fix for existing Finished Products
+            var finishedGoodCategory = db.Categories.FirstOrDefault(c => c.CategoryName.ToLower().Contains("finished good"));
+            if (finishedGoodCategory == null)
+            {
+                finishedGoodCategory = new Domains.Entities.Category { CategoryName = "Finished Good", Description = "Finished Goods" };
+                db.Categories.Add(finishedGoodCategory);
+                db.SaveChanges();
+            }
+            var finishedProductsItems = db.FinishedProducts.Include(fp => fp.Item).ToList();
+            foreach (var fp in finishedProductsItems)
+            {
+                if (fp.Item != null && fp.Item.CategoryId != finishedGoodCategory.CategoryId)
+                {
+                    fp.Item.CategoryId = finishedGoodCategory.CategoryId;
+                }
+            }
+            db.SaveChanges();
+            
+            // REMOVED: a startup routine that deleted every inventory row whose location name did not
+            // contain "commissary". It ran on every boot and would erase all branch stock, which is
+            // exactly the data the two-sided transfer work exists to maintain. Branches legitimately
+            // hold stock; if a balance is wrong the fix is a counted adjustment (Task 44), not a
+            // recurring mass delete.
+
+            // The routine that used to merge duplicate inventory rows on every start has been removed.
+            // A unique index on Inventories (ItemId, LocationId) now makes duplicates impossible, and
+            // the existing ones were merged once by the migration that added it. Repairing the same
+            // data on every boot was treating the symptom.
+
+            if (!db.AuditLogs.Any())
+            {
+                Console.WriteLine("→ Seeding PostgreSQL AuditLogs table...");
+                db.AuditLogs.AddRange(
+                    new Domains.Entities.AuditLog
+                    {
+                        EntityName = "Supply",
+                        EntityId = "Ube Yam 50kg",
+                        Action = "Initial Raw Material Stock Onboarded",
+                        FieldName = "Inventory Specialist",
+                        OldValue = "0",
+                        NewValue = "50",
+                        Timestamp = DateTime.UtcNow.AddHours(-18),
+                        // Seeded sample rows are the work of the seeder, not of a person.
+                        UserId = Domains.Identity.SystemUsers.Migration,
+                        UserName = "Database seeder"
+                    },
+                    new Domains.Entities.AuditLog
+                    {
+                        EntityName = "Supply",
+                        EntityId = "White Sugar 100kg",
+                        Action = "Restock Purchase Received & Verified",
+                        FieldName = "Warehouse Admin",
+                        OldValue = "20",
+                        NewValue = "120",
+                        Timestamp = DateTime.UtcNow.AddHours(-6),
+                        // Seeded sample rows are the work of the seeder, not of a person.
+                        UserId = Domains.Identity.SystemUsers.Migration,
+                        UserName = "Database seeder"
+                    },
+                    new Domains.Entities.AuditLog
+                    {
+                        EntityName = "Recipe",
+                        EntityId = "Ube Jam 500g Standard Batch",
+                        Action = "Production Recipe Version 1.0 Approved",
+                        FieldName = "Head Pastry Chef",
+                        OldValue = "Draft",
+                        NewValue = "Active",
+                        Timestamp = DateTime.UtcNow.AddDays(-1),
+                        // Seeded sample rows are the work of the seeder, not of a person.
+                        UserId = Domains.Identity.SystemUsers.Migration,
+                        UserName = "Database seeder"
+                    },
+                    new Domains.Entities.AuditLog
+                    {
+                        EntityName = "Recipe",
+                        EntityId = "Pan de Sal 20pc Pack",
+                        Action = "Ingredient BOM Ratio Calibrated",
+                        FieldName = "Production Supervisor",
+                        OldValue = "1.8kg flour",
+                        NewValue = "2.0kg flour",
+                        Timestamp = DateTime.UtcNow.AddHours(-10),
+                        // Seeded sample rows are the work of the seeder, not of a person.
+                        UserId = Domains.Identity.SystemUsers.Migration,
+                        UserName = "Database seeder"
+                    },
+                    new Domains.Entities.AuditLog
+                    {
+                        EntityName = "Supplier",
+                        EntityId = "Batangas Flour Corporation",
+                        Action = "Vendor Quality Verification Passed",
+                        FieldName = "Quality Lead",
+                        OldValue = "Pending Inspection",
+                        NewValue = "Grade A Approved",
+                        Timestamp = DateTime.UtcNow.AddDays(-2),
+                        // Seeded sample rows are the work of the seeder, not of a person.
+                        UserId = Domains.Identity.SystemUsers.Migration,
+                        UserName = "Database seeder"
+                    }
+                );
+                db.SaveChanges();
+                Console.WriteLine("✓ PostgreSQL AuditLogs seeded.");
+            }
+
+            Console.WriteLine("✓ All database initialization completed successfully!");
+        }
+        catch (Exception ex)
+        {
+            migrateLogger.LogError(ex, "✗ Failed to seed SCM master data.");
+            Console.WriteLine($"✗ Seeding failed: {ex.Message}");
+        }
+    }
+}
+
+// app.UseHttpsRedirection();
+app.UsePathBase("/api/scms");
+
+// Security Headers
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Append("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Append("X-Frame-Options", "DENY");
+    context.Response.Headers.Append("Referrer-Policy", "strict-origin-when-cross-origin");
+    await next();
+});
+
+app.UseCors("AppCorsPolicy");
+app.UseRateLimiter();
+app.UseStaticFiles();
+app.UseAuthorization();
+
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();
+    app.UseSwaggerUi(options =>
+    {
+        options.DocumentPath = "/openapi/v1.json";
+    });
+}
+
+app.MapControllers();
+
+app.Run();

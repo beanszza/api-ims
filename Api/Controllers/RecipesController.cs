@@ -17,6 +17,13 @@ public class RecipesController : ControllerBase
         _recipeService = recipeService;
     }
 
+    [HttpGet]
+    public async Task<ActionResult<ApiResponse<IEnumerable<RecipeResponse>>>> GetAllRecipes()
+    {
+        var result = await _recipeService.GetAllRecipesAsync();
+        return result.Success ? Ok(result) : StatusCode(500, result);
+    }
+
     [HttpPost]
     public async Task<ActionResult<ApiResponse<RecipeResponse>>> CreateRecipe([FromBody] CreateRecipeRequest request)
     {
@@ -30,6 +37,13 @@ public class RecipesController : ControllerBase
     public async Task<ActionResult<ApiResponse<RecipeResponse>>> UpdateRecipe([FromRoute] int id, [FromBody] UpdateRecipeRequest request)
     {
         var result = await _recipeService.UpdateRecipeAsync(id, request);
+        return result.Success ? Ok(result) : StatusCode(400, result);
+     }
+
+    [HttpDelete("{id}")]
+    public async Task<ActionResult<ApiResponse<EmptyPayload>>> DeleteRecipe([FromRoute] int id)
+    {
+        var result = await _recipeService.DeleteRecipeAsync(id);
         return result.Success ? Ok(result) : StatusCode(400, result);
     }
 }

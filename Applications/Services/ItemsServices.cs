@@ -16,14 +16,32 @@ public class ItemService : IItemService
 {
     private readonly ScmDbContext _context;
     private readonly ILogger<ItemService> _logger;
+    private readonly IAuditTrail _audit;
+    private readonly IDocumentNumberService _documentNumberService;
 
-    public ItemService(ScmDbContext context, ILogger<ItemService> logger)
+    public ItemService(ScmDbContext context, ILogger<ItemService> logger, IAuditTrail audit, IDocumentNumberService documentNumberService)
     {
         _context = context;
         _logger = logger;
+        _audit = audit;
+        _documentNumberService = documentNumberService;
     }
 
-    public async Task<ApiResponse<IEnumerable<ItemResponse>>> GetAllItemsAsync(string? search = null, string? category = null, bool? isActive = null, string? sort = "asc")
+    /// <summary>
+    /// Records an item change against the acting user.
+    /// </summary>
+    /// <remarks>
+    /// This used to hardcode <c>UserId = 1</c> and stuff the literal string "scmsuser" into the
+    /// FieldName column, so the audit trail asserted an identity that was never checked and misused a
+    /// column meant for the field that changed.
+    /// </remarks>
+    private async Task LogActionAsync(string action, string itemName)
+    {
+        _audit.Record(nameof(Item), itemName, action);
+        await _context.SaveChangesAsync();
+    }
+
+    public async Task<ApiResponse<PagedData<ItemResponse>>> GetAllItemsAsync(string? search = null, string? category = null, bool? isActive = null, string? sort = "asc", int page = 1, int pageSize = 10)
     {
         try
         {
@@ -31,7 +49,7 @@ public class ItemService : IItemService
 
             if (search != null && search.Length > 200)
             {
-                return ApiResponse<IEnumerable<ItemResponse>>.FailureResponse("Search query cannot exceed 200 characters.");
+                return ApiResponse<PagedData<ItemResponse>>.FailureResponse("Search query cannot exceed 200 characters.");
             }
 
             var query = _context.Items.AsQueryable();
@@ -51,6 +69,7 @@ public class ItemService : IItemService
                 .Select(i => new ItemResponse
                 {
                     ItemId = i.ItemId,
+                    ItemCode = i.ItemCode,
                     ItemName = i.ItemName,
                     UomId = i.UomId,
                     CategoryId = i.CategoryId,
@@ -72,30 +91,43 @@ public class ItemService : IItemService
                     return terms.All(term =>
                     {
                         var lowerTerm = term.ToLowerInvariant();
+                        bool codeMatch = !string.IsNullOrEmpty(item.ItemCode) && item.ItemCode.ToLowerInvariant().Contains(lowerTerm);
+                        bool idMatch = item.ItemId.ToString().Contains(lowerTerm);
                         bool nameMatch = item.ItemName.ToLowerInvariant().Contains(lowerTerm);
                         bool categoryMatch = item.CategoryName.ToLowerInvariant().Contains(lowerTerm);
                         bool quantityMatch = item.CurrentStock.ToString().Contains(lowerTerm);
-                        return nameMatch || categoryMatch || quantityMatch;
+                        return codeMatch || idMatch || nameMatch || categoryMatch || quantityMatch;
                     });
                 }).ToList();
             }
 
-            //Sort alphabetically (default Ascending)
+            // Sort order: if 'desc' sort by ItemId desc; default sort is chronological by ItemId asc (newest at bottom)
             if (string.Equals(sort, "desc", StringComparison.OrdinalIgnoreCase))
             {
-                items = items.OrderByDescending(i => i.ItemName).ToList();
+                items = items.OrderByDescending(i => i.ItemId).ToList();
             }
             else
             {
-                items = items.OrderBy(i => i.ItemName).ToList();
+                items = items.OrderBy(i => i.ItemId).ToList();
             }
 
-            return ApiResponse<IEnumerable<ItemResponse>>.SuccessResponse(items);
+            var totalCount = items.Count;
+            var pagedItems = items.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+
+            var pagedData = new PagedData<ItemResponse>
+            {
+                Items = pagedItems,
+                TotalCount = totalCount,
+                Page = page,
+                PageSize = pageSize
+            };
+
+            return ApiResponse<PagedData<ItemResponse>>.SuccessResponse(pagedData);
         }
         catch (Exception ex)
         {
             _logger.LogError($"Error fetching items: {ex.Message}");
-            return ApiResponse<IEnumerable<ItemResponse>>.FailureResponse($"An error occurred: {ex.Message}");
+            return ApiResponse<PagedData<ItemResponse>>.FailureResponse($"An error occurred: {ex.Message}");
         }
     }
 
@@ -123,6 +155,7 @@ public class ItemService : IItemService
             var response = new ItemResponse
             {
                 ItemId = item.ItemId,
+                ItemCode = item.ItemCode,
                 ItemName = item.ItemName,
                 UomId = item.UomId,
                 CategoryId = item.CategoryId,
@@ -149,6 +182,45 @@ public class ItemService : IItemService
         {
             _logger.LogInformation($"Creating new item: {request.ItemName}");
 
+            if (string.IsNullOrWhiteSpace(request.ItemName))
+            {
+                return ApiResponse<ItemResponse>.FailureResponse("Supply item name is required.");
+            }
+
+            var trimmedName = request.ItemName.Trim();
+            if (trimmedName.Length > 50)
+            {
+                return ApiResponse<ItemResponse>.FailureResponse("Supply item name cannot exceed 50 characters.");
+            }
+
+            if (!System.Text.RegularExpressions.Regex.IsMatch(trimmedName, @"^[a-zA-Z\s]+$"))
+            {
+                return ApiResponse<ItemResponse>.FailureResponse("Supply item name can only contain letters.");
+            }
+
+            if (request.MinStockLevel < 1)
+            {
+                return ApiResponse<ItemResponse>.FailureResponse("Min stock level must be at least 1.");
+            }
+
+            if (request.MaxStockLevel < 1)
+            {
+                return ApiResponse<ItemResponse>.FailureResponse("Max stock level must be at least 1.");
+            }
+
+            if (request.MaxStockLevel < request.MinStockLevel)
+            {
+                return ApiResponse<ItemResponse>.FailureResponse("Max stock level cannot be less than min stock level.");
+            }
+
+            // Validate duplicate name against both active and inactive items
+            var normalizedName = trimmedName.ToLower();
+            var nameExists = await _context.Items.AnyAsync(i => i.ItemName.Trim().ToLower() == normalizedName);
+            if (nameExists)
+            {
+                return ApiResponse<ItemResponse>.FailureResponse("An item with this name already exists.");
+            }
+
             // Validate UOM and Category exist
             var uomExists = await _context.UnitOfMeasures.AnyAsync(u => u.UomId == request.UomId);
 
@@ -166,10 +238,17 @@ public class ItemService : IItemService
                 return ApiResponse<ItemResponse>.FailureResponse("Category must be 'Raw Materials' or 'Tools and Supplies'.");
             }
 
+            var itemCode = await _documentNumberService.NextAsync(Domains.Enums.DocumentType.Item);
+            
             var item = new Item
             {
+                ItemCode = itemCode,
                 ItemName = request.ItemName,
                 UomId = request.UomId,
+                // Stock is held in the unit the item was defined with. A separate purchasing unit
+                // (a 50 kg sack, say) arrives with the supplier catalogue in Task 12 and is
+                // converted into this unit on receipt.
+                StockUomId = request.UomId,
                 CategoryId = request.CategoryId,
                 MinStockLevel = request.MinStockLevel,
                 MaxStockLevel = request.MaxStockLevel,
@@ -189,6 +268,7 @@ public class ItemService : IItemService
             var response = new ItemResponse
             {
                 ItemId = item.ItemId,
+                ItemCode = item.ItemCode,
                 ItemName = item.ItemName,
                 UomId = item.UomId,
                 CategoryId = item.CategoryId,
@@ -200,13 +280,15 @@ public class ItemService : IItemService
                 CurrentStock = currentStock
             };
 
+            await LogActionAsync("Added New Supply", item.ItemName);
+
             _logger.LogInformation($"Item created successfully with ID: {item.ItemId}");
             return ApiResponse<ItemResponse>.SuccessResponse(response, "Item created successfully");
         }
         catch (Exception ex)
         {
             _logger.LogError($"Error creating item: {ex.Message}");
-            return ApiResponse<ItemResponse>.FailureResponse($"An error occurred: {ex.Message}");
+            return ApiResponse<ItemResponse>.FailureResponse($"An error occurred: {ex.InnerException?.Message ?? ex.Message}");
         }
     }
 
@@ -223,6 +305,48 @@ public class ItemService : IItemService
                 return ApiResponse<ItemResponse>.FailureResponse("Item not found");
             }
 
+            // Validate duplicate name if it's changing
+            if (request.ItemName != null && !request.ItemName.Equals(item.ItemName, StringComparison.OrdinalIgnoreCase))
+            {
+                var trimmedName = request.ItemName.Trim();
+                if (string.IsNullOrWhiteSpace(trimmedName))
+                {
+                    return ApiResponse<ItemResponse>.FailureResponse("Supply item name cannot be empty.");
+                }
+                if (trimmedName.Length > 50)
+                {
+                    return ApiResponse<ItemResponse>.FailureResponse("Supply item name cannot exceed 50 characters.");
+                }
+
+                if (!System.Text.RegularExpressions.Regex.IsMatch(trimmedName, @"^[a-zA-Z\s]+$"))
+                {
+                    return ApiResponse<ItemResponse>.FailureResponse("Supply item name can only contain letters.");
+                }
+
+                var normalizedName = trimmedName.ToLower();
+                var nameExists = await _context.Items.AnyAsync(i => i.ItemName.Trim().ToLower() == normalizedName && i.ItemId != id);
+                if (nameExists)
+                {
+                    return ApiResponse<ItemResponse>.FailureResponse("An item with this name already exists.");
+                }
+            }
+
+            var nextMin = request.MinStockLevel ?? item.MinStockLevel;
+            var nextMax = request.MaxStockLevel ?? item.MaxStockLevel;
+
+            if (request.MinStockLevel.HasValue && request.MinStockLevel.Value < 1)
+            {
+                return ApiResponse<ItemResponse>.FailureResponse("Min stock level must be at least 1.");
+            }
+            if (request.MaxStockLevel.HasValue && request.MaxStockLevel.Value < 1)
+            {
+                return ApiResponse<ItemResponse>.FailureResponse("Max stock level must be at least 1.");
+            }
+            if (nextMax < nextMin)
+            {
+                return ApiResponse<ItemResponse>.FailureResponse("Max stock level cannot be less than min stock level.");
+            }
+
             // Validate references if they're being updated
             if (request.UomId.HasValue)
             {
@@ -232,7 +356,11 @@ public class ItemService : IItemService
                     _logger.LogWarning($"Invalid UOM ID: {request.UomId.Value}");
                     return ApiResponse<ItemResponse>.FailureResponse("Invalid UOM ID");
                 }
+                // Changing the unit an item is measured in changes what its balance means, so the
+                // stocking unit follows the display unit. Existing balances are NOT restated: that
+                // needs a deliberate conversion, which belongs with cycle counting in Task 44.
                 item.UomId = request.UomId.Value;
+                item.StockUomId = request.UomId.Value;
             }
 
             if (request.CategoryId.HasValue)
@@ -268,6 +396,7 @@ public class ItemService : IItemService
             var response = new ItemResponse
             {
                 ItemId = item.ItemId,
+                ItemCode = item.ItemCode,
                 ItemName = item.ItemName,
                 UomId = item.UomId,
                 CategoryId = item.CategoryId,
@@ -278,6 +407,8 @@ public class ItemService : IItemService
                 CategoryName = item.Category!.CategoryName,
                 CurrentStock = currentStock
             };
+
+            await LogActionAsync(request.IsActive.HasValue && !request.IsActive.Value ? "Deactivated Supply" : "Updated Supply", item.ItemName);
 
             _logger.LogInformation($"Item with ID {id} updated successfully");
             return ApiResponse<ItemResponse>.SuccessResponse(response, "Item updated successfully");
@@ -304,6 +435,8 @@ public class ItemService : IItemService
 
             _context.Items.Remove(item);
             await _context.SaveChangesAsync();
+
+            await LogActionAsync("Deleted Supply", item.ItemName);
 
             _logger.LogInformation($"Item with ID {id} deleted successfully");
             return ApiResponse<EmptyPayload>.SuccessResponse(new EmptyPayload(), "Item deleted successfully");
