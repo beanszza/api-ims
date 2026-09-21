@@ -34,6 +34,9 @@ public class ScmDbContext : DbContext
     public DbSet<QualityInspectionItem> QualityInspectionItems { get; set; }
     public DbSet<NonConformanceReport> NonConformanceReports { get; set; }
     public DbSet<ReturnToVendor> ReturnToVendors { get; set; }
+    public DbSet<Discrepancy> Discrepancies { get; set; }
+    public DbSet<PutAwayTransaction> PutAwayTransactions { get; set; }
+    public DbSet<LossReport> LossReports { get; set; }
 
     // --- PRODUCTION & MANUFACTURING ---
     public DbSet<Recipe> Recipes { get; set; }
@@ -144,6 +147,9 @@ public class ScmDbContext : DbContext
         ConfigureQualityInspections(modelBuilder);
         ConfigureNonConformanceReports(modelBuilder);
         ConfigureReturnToVendors(modelBuilder);
+        ConfigureDiscrepancies(modelBuilder);
+        ConfigurePutAwayTransactions(modelBuilder);
+        ConfigureLossReports(modelBuilder);
         ConfigureDisposalRecords(modelBuilder);
         ConfigureBranchDistribution(modelBuilder);
         ConfigureRecallRecords(modelBuilder);
@@ -437,12 +443,28 @@ public class ScmDbContext : DbContext
         modelBuilder.Entity<PurchaseRequisitionItem>().Property(e => e.EstimatedUnitPrice).HasPrecision(18, 4);
 
         modelBuilder.Entity<GoodsReceiptItem>().Property(e => e.OrderedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<GoodsReceiptItem>().Property(e => e.PreviouslyReceivedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<GoodsReceiptItem>().Property(e => e.DeclaredQuantity).HasPrecision(precision, scale);
         modelBuilder.Entity<GoodsReceiptItem>().Property(e => e.DeliveredQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<GoodsReceiptItem>().Property(e => e.VarianceQuantity).HasPrecision(precision, scale);
+
+        modelBuilder.Entity<QualityInspection>().Property(e => e.TotalReceivedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<QualityInspection>().Property(e => e.TotalAcceptedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<QualityInspection>().Property(e => e.TotalRejectedQuantity).HasPrecision(precision, scale);
 
         modelBuilder.Entity<QualityInspectionItem>().Property(e => e.DeliveredQuantity).HasPrecision(precision, scale);
         modelBuilder.Entity<QualityInspectionItem>().Property(e => e.AcceptedQuantity).HasPrecision(precision, scale);
         modelBuilder.Entity<QualityInspectionItem>().Property(e => e.RejectedQuantity).HasPrecision(precision, scale);
         modelBuilder.Entity<QualityInspectionItem>().Property(e => e.ConcessionQuantity).HasPrecision(precision, scale);
+
+        modelBuilder.Entity<Discrepancy>().Property(e => e.OrderedQuantity).HasPrecision(precision, scale);
+        modelBuilder.Entity<Discrepancy>().Property(e => e.PreviouslyReceivedQty).HasPrecision(precision, scale);
+        modelBuilder.Entity<Discrepancy>().Property(e => e.CurrentReceivedQty).HasPrecision(precision, scale);
+        modelBuilder.Entity<Discrepancy>().Property(e => e.DiscrepancyQuantity).HasPrecision(precision, scale);
+
+        modelBuilder.Entity<PutAwayTransaction>().Property(e => e.AcceptedQuantity).HasPrecision(precision, scale);
+
+        modelBuilder.Entity<LossReport>().Property(e => e.LostQuantity).HasPrecision(precision, scale);
 
         modelBuilder.Entity<NonConformanceReport>().Property(e => e.DefectiveQuantity).HasPrecision(precision, scale);
 
@@ -526,6 +548,21 @@ public class ScmDbContext : DbContext
         modelBuilder.Entity<GoodsReceipt>()
             .Property(e => e.Status)
             .HasConversion(EnumTextConverter<GoodsReceiptStatus>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<Discrepancy>()
+            .Property(e => e.DiscrepancyType)
+            .HasConversion(EnumTextConverter<DiscrepancyType>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<Discrepancy>()
+            .Property(e => e.Status)
+            .HasConversion(EnumTextConverter<DiscrepancyStatus>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<PutAwayTransaction>()
+            .Property(e => e.Status)
+            .HasConversion(EnumTextConverter<PutAwayStatus>())
             .HasColumnType("text");
 
         modelBuilder.Entity<QualityInspection>()
@@ -839,6 +876,152 @@ public class ScmDbContext : DbContext
             .WithMany()
             .HasForeignKey(i => i.LotId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        item.HasOne(i => i.DeliveryItem)
+            .WithMany()
+            .HasForeignKey(i => i.DeliveryItemId)
+            .OnDelete(DeleteBehavior.SetNull);
+    }
+
+    private static void ConfigureDiscrepancies(ModelBuilder modelBuilder)
+    {
+        var dsc = modelBuilder.Entity<Discrepancy>();
+
+        dsc.HasKey(d => d.DiscrepancyId);
+
+        dsc.HasIndex(d => d.DiscrepancyNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_Discrepancies_DiscrepancyNumber");
+
+        dsc.HasIndex(d => d.GrnId).HasDatabaseName("IX_Discrepancies_GrnId");
+        dsc.HasIndex(d => d.PoId).HasDatabaseName("IX_Discrepancies_PoId");
+        dsc.HasIndex(d => d.DeliveryId).HasDatabaseName("IX_Discrepancies_DeliveryId");
+
+        dsc.HasOne(d => d.GoodsReceipt)
+            .WithMany(g => g.Discrepancies)
+            .HasForeignKey(d => d.GrnId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        dsc.HasOne(d => d.PurchaseOrder)
+            .WithMany()
+            .HasForeignKey(d => d.PoId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        dsc.HasOne(d => d.Delivery)
+            .WithMany()
+            .HasForeignKey(d => d.DeliveryId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        dsc.HasOne(d => d.Item)
+            .WithMany()
+            .HasForeignKey(d => d.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        dsc.HasOne(d => d.NonConformanceReport)
+            .WithMany()
+            .HasForeignKey(d => d.NcrId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        dsc.HasOne(d => d.ReturnToVendor)
+            .WithMany()
+            .HasForeignKey(d => d.RtvId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        dsc.HasOne(d => d.LossReport)
+            .WithOne(l => l.Discrepancy)
+            .HasForeignKey<Discrepancy>(d => d.LossReportId)
+            .OnDelete(DeleteBehavior.SetNull);
+    }
+
+    private static void ConfigurePutAwayTransactions(ModelBuilder modelBuilder)
+    {
+        var pa = modelBuilder.Entity<PutAwayTransaction>();
+
+        pa.HasKey(p => p.PutAwayId);
+
+        pa.HasIndex(p => p.PutAwayNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_PutAwayTransactions_PutAwayNumber");
+
+        pa.HasIndex(p => p.GrnId).HasDatabaseName("IX_PutAwayTransactions_GrnId");
+
+        pa.HasOne(p => p.GoodsReceipt)
+            .WithMany(g => g.PutAways)
+            .HasForeignKey(p => p.GrnId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        pa.HasOne(p => p.GoodsReceiptItem)
+            .WithMany()
+            .HasForeignKey(p => p.GrnItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        pa.HasOne(p => p.QaInspection)
+            .WithMany()
+            .HasForeignKey(p => p.QaInspectionId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        pa.HasOne(p => p.Item)
+            .WithMany()
+            .HasForeignKey(p => p.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        pa.HasOne(p => p.Uom)
+            .WithMany()
+            .HasForeignKey(p => p.UomId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        pa.HasOne(p => p.DestinationLocation)
+            .WithMany()
+            .HasForeignKey(p => p.DestinationLocationId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        pa.HasOne(p => p.Lot)
+            .WithMany()
+            .HasForeignKey(p => p.LotId)
+            .OnDelete(DeleteBehavior.SetNull);
+    }
+
+    private static void ConfigureLossReports(ModelBuilder modelBuilder)
+    {
+        var lr = modelBuilder.Entity<LossReport>();
+
+        lr.HasKey(l => l.LossReportId);
+
+        lr.HasIndex(l => l.LossReportNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_LossReports_LossReportNumber");
+
+        lr.HasIndex(l => l.DiscrepancyId).HasDatabaseName("IX_LossReports_DiscrepancyId");
+
+        lr.HasOne(l => l.GoodsReceipt)
+            .WithMany()
+            .HasForeignKey(l => l.GrnId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        lr.HasOne(l => l.PurchaseOrder)
+            .WithMany()
+            .HasForeignKey(l => l.PoId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        lr.HasOne(l => l.Lot)
+            .WithMany()
+            .HasForeignKey(l => l.LotId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        lr.HasOne(l => l.Item)
+            .WithMany()
+            .HasForeignKey(l => l.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        lr.HasOne(l => l.Uom)
+            .WithMany()
+            .HasForeignKey(l => l.UomId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        lr.HasOne(l => l.StockLedgerEntry)
+            .WithMany()
+            .HasForeignKey(l => l.StockLedgerEntryId)
+            .OnDelete(DeleteBehavior.SetNull);
     }
 
     /// <summary>

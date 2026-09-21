@@ -39,7 +39,11 @@ public class Item
     /// <summary>Maximum sensible holding, in the item's stocking unit of measure.</summary>
     public decimal MaxStockLevel { get; set; }
 
-    public bool IsActive { get; set; }
+    public bool IsActive { get; set; } = true;
+    public bool IsLotTracked { get; set; } = true;
+    public bool IsExpiryTracked { get; set; } = false;
+    public bool IsSerialTracked { get; set; } = false;
+    public bool IsQaRequired { get; set; } = true;
 
     public UnitOfMeasure? Uom { get; set; }
 

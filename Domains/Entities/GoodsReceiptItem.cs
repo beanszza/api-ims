@@ -17,7 +17,18 @@ public class GoodsReceiptItem
 
     public decimal OrderedQuantity { get; set; }
 
+    public decimal PreviouslyReceivedQuantity { get; set; }
+
+    public decimal? DeclaredQuantity { get; set; }
+
     public decimal DeliveredQuantity { get; set; }
+
+    public decimal VarianceQuantity { get; set; }
+
+    public string? VarianceType { get; set; } // "Short", "Over", "None"
+
+    public int? DeliveryItemId { get; set; }
+    public DeliveryItem? DeliveryItem { get; set; }
 
     public int PurchaseUomId { get; set; }
     public UnitOfMeasure PurchaseUom { get; set; } = null!;
@@ -30,4 +41,6 @@ public class GoodsReceiptItem
     public DateOnly? ManufactureDate { get; set; }
 
     public DateOnly? ExpiryDate { get; set; }
+
+    public string? Notes { get; set; }
 }

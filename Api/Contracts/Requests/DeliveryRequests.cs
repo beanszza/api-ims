@@ -9,8 +9,6 @@ public class CreateDeliveryRequest
     [Required]
     public int PoId { get; set; }
 
-    public int? ReceivingLocationId { get; set; }
-
     public DateTime? ScheduledDate { get; set; }
 
     public DateTime? ExpectedArrivalDate { get; set; }

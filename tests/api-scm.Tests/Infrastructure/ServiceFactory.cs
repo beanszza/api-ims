@@ -189,16 +189,8 @@ public static class ServiceFactory
     {
         var actor = user ?? DefaultUser;
         var docNumbers = DocumentNumbers(context);
-        var postingService = new StockPostingService(
-            context,
-            actor,
-            new LotCodeGenerator(context, docNumbers),
-            new LocationResolver(context),
-            new StatusTransitionGuard());
-
         return new GoodsReceiptService(
             context,
-            postingService,
             Posting(context),
             docNumbers,
             new LocationResolver(context),

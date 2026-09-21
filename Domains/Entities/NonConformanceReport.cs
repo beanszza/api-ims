@@ -34,6 +34,14 @@ public class NonConformanceReport
 
     public NcrStatus Status { get; set; } = NcrStatus.Open;
 
+    public string? Disposition { get; set; } // "ReturnToSupplier", "LossReport", "Pending"
+
+    public string? DispositionNotes { get; set; }
+
+    public string? DispositionBy { get; set; }
+
+    public DateTime? DispositionAt { get; set; }
+
     public string CreatedBy { get; set; } = string.Empty;
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

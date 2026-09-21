@@ -7,7 +7,8 @@ namespace Applications.Interfaces;
 
 public interface IQualityInspectionService
 {
-    Task<ApiResponse<List<QualityInspectionResponse>>> GetInspectionsAsync(string? inspectionType = null);
+    Task<ApiResponse<List<QualityInspectionResponse>>> GetInspectionsAsync(string? inspectionType = null, int? grnId = null, string? status = null);
     Task<ApiResponse<QualityInspectionResponse>> GetInspectionByIdAsync(int inspectionId);
     Task<ApiResponse<QualityInspectionResponse>> InspectIncomingGoodsAsync(CreateQualityInspectionRequest request);
+    Task<ApiResponse<QualityInspectionResponse>> CompleteInspectionAsync(int inspectionId, CompleteQualityInspectionRequest request);
 }

@@ -173,6 +173,8 @@ builder.Services.AddScoped<IPurchaseRequisitionService, PurchaseRequisitionServi
 builder.Services.AddScoped<IDeliveryService, DeliveryService>();
 builder.Services.AddScoped<IGoodsReceiptService, GoodsReceiptService>();
 builder.Services.AddScoped<IQualityInspectionService, QualityInspectionService>();
+builder.Services.AddScoped<IDiscrepancyService, DiscrepancyService>();
+builder.Services.AddScoped<IPutAwayService, PutAwayService>();
 builder.Services.AddScoped<INcrService, NcrService>();
 builder.Services.AddScoped<ISupplierScorecardService, SupplierScorecardService>();
 builder.Services.AddScoped<IAllocationService, AllocationService>();
@@ -204,7 +206,7 @@ builder.Services.AddRateLimiter(options =>
         await context.HttpContext.Response.WriteAsync("{\"success\":false,\"message\":\"Too many requests. Please slow down and try again later.\",\"statusCode\":429}", token);
     };
 
-    // Global rate limit: 60 requests per minute per client IP
+    // Global rate limit: generous in development, calibrated for production
     options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(httpContext =>
     {
         var clientIp = httpContext.Connection.RemoteIpAddress?.ToString()
@@ -215,14 +217,14 @@ builder.Services.AddRateLimiter(options =>
             clientIp,
             _ => new SlidingWindowRateLimiterOptions
             {
-                PermitLimit = 60,
+                PermitLimit = builder.Environment.IsDevelopment() ? 1000 : 120,
                 Window = TimeSpan.FromMinutes(1),
                 SegmentsPerWindow = 4,
-                QueueLimit = 0
+                QueueLimit = 50
             });
     });
 
-    // Stricter policy for heavy export / bulk endpoints: 5 per minute per IP
+    // Stricter policy for heavy export / bulk endpoints
     options.AddPolicy("export", httpContext =>
     {
         var clientIp = httpContext.Connection.RemoteIpAddress?.ToString()
@@ -233,13 +235,13 @@ builder.Services.AddRateLimiter(options =>
             clientIp,
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 5,
+                PermitLimit = builder.Environment.IsDevelopment() ? 50 : 10,
                 Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0
+                QueueLimit = 10
             });
     });
 
-    // Stricter policy for mutation/creation: 25 per minute per IP
+    // Policy for mutation/creation
     options.AddPolicy("write", httpContext =>
     {
         var clientIp = httpContext.Connection.RemoteIpAddress?.ToString()
@@ -250,9 +252,9 @@ builder.Services.AddRateLimiter(options =>
             clientIp,
             _ => new FixedWindowRateLimiterOptions
             {
-                PermitLimit = 25,
+                PermitLimit = builder.Environment.IsDevelopment() ? 300 : 60,
                 Window = TimeSpan.FromMinutes(1),
-                QueueLimit = 0
+                QueueLimit = 20
             });
     });
 });

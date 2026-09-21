@@ -18,11 +18,14 @@ public class QualityInspectionsController : ControllerBase
         _qcService = qcService;
     }
 
-    /// <summary>Lists quality inspections with optional type filtering.</summary>
+    /// <summary>Lists quality inspections with optional filtering by type, GRN, or status.</summary>
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<List<QualityInspectionResponse>>>> GetAll([FromQuery] string? type)
+    public async Task<ActionResult<ApiResponse<List<QualityInspectionResponse>>>> GetAll(
+        [FromQuery] string? type,
+        [FromQuery] int? grnId,
+        [FromQuery] string? status)
     {
-        var result = await _qcService.GetInspectionsAsync(type);
+        var result = await _qcService.GetInspectionsAsync(type, grnId, status);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
@@ -32,6 +35,19 @@ public class QualityInspectionsController : ControllerBase
     {
         var result = await _qcService.GetInspectionByIdAsync(id);
         return result.Success ? Ok(result) : NotFound(result);
+    }
+
+    /// <summary>Completes an existing QA inspection with per-item accept/reject quantities.</summary>
+    [HttpPost("{id:int}/complete")]
+    public async Task<ActionResult<ApiResponse<QualityInspectionResponse>>> Complete(
+        int id,
+        [FromBody] CompleteQualityInspectionRequest request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var result = await _qcService.CompleteInspectionAsync(id, request);
+        return result.Success ? Ok(result) : BadRequest(result);
     }
 
     /// <summary>Records incoming QA inspection, releases approved stock to Available, and flags defects.</summary>

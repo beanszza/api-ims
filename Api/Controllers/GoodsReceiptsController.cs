@@ -18,11 +18,14 @@ public class GoodsReceiptsController : ControllerBase
         _grnService = grnService;
     }
 
-    /// <summary>Lists Goods Receipt Notes, optionally filtered by PO.</summary>
+    /// <summary>Lists Goods Receipt Notes, optionally filtered by PO, Delivery, or Status.</summary>
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<List<GoodsReceiptResponse>>>> GetAll([FromQuery] int? poId)
+    public async Task<ActionResult<ApiResponse<List<GoodsReceiptResponse>>>> GetAll(
+        [FromQuery] int? poId,
+        [FromQuery] int? deliveryId,
+        [FromQuery] string? status)
     {
-        var result = await _grnService.GetGoodsReceiptsAsync(poId);
+        var result = await _grnService.GetGoodsReceiptsAsync(poId, deliveryId, status);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
@@ -34,14 +37,41 @@ public class GoodsReceiptsController : ControllerBase
         return result.Success ? Ok(result) : NotFound(result);
     }
 
-    /// <summary>Posts incoming goods against a PO, staging stock in Quarantine lots.</summary>
+    /// <summary>Creates a Draft Goods Receipt Note from one arrived delivery.</summary>
     [HttpPost]
     public async Task<ActionResult<ApiResponse<GoodsReceiptResponse>>> Create([FromBody] CreateGoodsReceiptRequest request)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
 
-        var result = await _grnService.ReceiveGoodsAsync(request);
+        var result = await _grnService.CreateDraftGrnAsync(request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>Updates an existing Draft Goods Receipt Note.</summary>
+    [HttpPut("{id:int}")]
+    public async Task<ActionResult<ApiResponse<GoodsReceiptResponse>>> Update(int id, [FromBody] UpdateGoodsReceiptRequest request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var result = await _grnService.UpdateDraftGrnAsync(id, request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>Posts a Draft GRN, updates PO receipt totals, initiates QA, and records discrepancies.</summary>
+    [HttpPost("{id:int}/post")]
+    public async Task<ActionResult<ApiResponse<GoodsReceiptResponse>>> Post(int id)
+    {
+        var result = await _grnService.PostGrnAsync(id);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>Cancels a Draft GRN.</summary>
+    [HttpPost("{id:int}/cancel")]
+    public async Task<ActionResult<ApiResponse<GoodsReceiptResponse>>> Cancel(int id)
+    {
+        var result = await _grnService.CancelGrnAsync(id);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 }

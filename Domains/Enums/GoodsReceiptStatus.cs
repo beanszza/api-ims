@@ -10,9 +10,15 @@ public enum GoodsReceiptStatus
     [DbValue("Received")]
     Received = 2,
 
-    [DbValue("Inspected")]
-    Inspected = 3,
+    [DbValue("QaCompleted")]
+    QaCompleted = 3,
+
+    [DbValue("PartiallyPutAway")]
+    PartiallyPutAway = 4,
+
+    [DbValue("FullyPutAway")]
+    FullyPutAway = 5,
 
     [DbValue("Cancelled")]
-    Cancelled = 4
+    Cancelled = 6
 }

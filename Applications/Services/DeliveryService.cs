@@ -72,7 +72,9 @@ public class DeliveryService : IDeliveryService
                 return ApiResponse<DeliveryResponse>.FailureResponse($"Cannot create a delivery for a purchase order in '{po.Status}' status.");
             }
 
-            var receivingLocation = await _locations.ResolveReceivingLocationAsync(request.ReceivingLocationId);
+            // All supplier deliveries are inbound to the single Commissary receiving point.
+            // A storage location is selected later, during Put Away.
+            var receivingLocation = await _locations.ResolveReceivingLocationAsync(null);
             var scheduledDate = request.ScheduledDate ?? DateTime.UtcNow;
             var deliveryNumber = await _documentNumbers.NextAsync(DocumentType.Delivery, scheduledDate);
             var actor = _currentUser.Current;
@@ -348,34 +350,6 @@ public class DeliveryService : IDeliveryService
 
             if (!string.IsNullOrWhiteSpace(request.ArrivalAttachmentBase64))
                 delivery.ArrivalAttachment = request.ArrivalAttachmentBase64.Trim();
-
-            // Synchronize received quantities with referenced Purchase Order
-            var deliveryWithItems = await _context.Deliveries
-                .Include(d => d.Items)
-                .FirstOrDefaultAsync(d => d.DeliveryId == deliveryId, ct);
-
-            var po = await _context.PurchaseOrders
-                .Include(p => p.PurchaseOrderItems)
-                .FirstOrDefaultAsync(p => p.PoId == delivery.PoId, ct);
-
-            if (po != null && deliveryWithItems != null)
-            {
-                foreach (var dItem in deliveryWithItems.Items)
-                {
-                    var poItem = po.PurchaseOrderItems.FirstOrDefault(pi => pi.PoItemId == dItem.PoItemId);
-                    if (poItem != null)
-                    {
-                        poItem.ReceivedQuantity += dItem.DeclaredQuantity;
-                    }
-                }
-
-                bool anyReceived = po.PurchaseOrderItems.Any(pi => pi.ReceivedQuantity > 0);
-
-                if (anyReceived)
-                {
-                    po.Status = PurchaseOrderStatus.Arrived;
-                }
-            }
 
             await _posting.ExecuteAsync(async () =>
             {

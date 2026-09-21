@@ -27,13 +27,31 @@ public class GoodsReceipt
 
     public string DeliveryNoteNumber { get; set; } = string.Empty;
 
+    public string? SupplierDrNumber { get; set; }
+
+    public string? SupplierInvoiceNumber { get; set; }
+
+    public string? ReceivingBay { get; set; }
+
     public string? Carrier { get; set; }
 
     public string ReceivedBy { get; set; } = string.Empty;
 
-    public GoodsReceiptStatus Status { get; set; } = GoodsReceiptStatus.Received;
+    public string CreatedBy { get; set; } = string.Empty;
+
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+
+    public string? PostedBy { get; set; }
+
+    public DateTime? PostedAt { get; set; }
+
+    public GoodsReceiptStatus Status { get; set; } = GoodsReceiptStatus.Draft;
 
     public string? Notes { get; set; }
 
     public ICollection<GoodsReceiptItem> Items { get; set; } = new List<GoodsReceiptItem>();
+
+    public ICollection<Discrepancy> Discrepancies { get; set; } = new List<Discrepancy>();
+
+    public ICollection<PutAwayTransaction> PutAways { get; set; } = new List<PutAwayTransaction>();
 }

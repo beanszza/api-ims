@@ -28,6 +28,16 @@ public class QualityInspection
 
     public QualityInspectionStatus Status { get; set; } = QualityInspectionStatus.Pending;
 
+    public decimal TotalReceivedQuantity { get; set; }
+
+    public decimal TotalAcceptedQuantity { get; set; }
+
+    public decimal TotalRejectedQuantity { get; set; }
+
+    public DateTime? CompletedAt { get; set; }
+
+    public string? CompletedBy { get; set; }
+
     public string? OverallNotes { get; set; }
 
     public ICollection<QualityInspectionItem> Items { get; set; } = new List<QualityInspectionItem>();
