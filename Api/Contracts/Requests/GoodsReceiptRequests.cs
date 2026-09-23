@@ -68,3 +68,10 @@ public class CreateGoodsReceiptItemRequest
 
     public string? Notes { get; set; }
 }
+
+public class RejectGrnRequest
+{
+    [Required]
+    public string Reason { get; set; } = string.Empty;
+    public string? Notes { get; set; }
+}

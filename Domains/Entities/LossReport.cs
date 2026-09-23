@@ -32,6 +32,10 @@ public class LossReport
     public string Reason { get; set; } = string.Empty;
     public string? Notes { get; set; }
 
+    public bool IsAcknowledged { get; set; } = false;
+    public string? AcknowledgedBy { get; set; }
+    public DateTime? AcknowledgedAt { get; set; }
+
     public string AuthorisedBy { get; set; } = string.Empty;
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

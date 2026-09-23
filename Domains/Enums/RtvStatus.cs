@@ -14,5 +14,8 @@ public enum RtvStatus
     CreditNoteReceived = 3,
 
     [DbValue("Cancelled")]
-    Cancelled = 4
+    Cancelled = 4,
+
+    [DbValue("Pending Approval")]
+    PendingApproval = 5
 }

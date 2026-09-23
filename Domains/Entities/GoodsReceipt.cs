@@ -47,6 +47,12 @@ public class GoodsReceipt
 
     public GoodsReceiptStatus Status { get; set; } = GoodsReceiptStatus.Draft;
 
+    public string? RejectedBy { get; set; }
+
+    public DateTime? RejectedAt { get; set; }
+
+    public string? RejectionReason { get; set; }
+
     public string? Notes { get; set; }
 
     public ICollection<GoodsReceiptItem> Items { get; set; } = new List<GoodsReceiptItem>();
@@ -54,4 +60,6 @@ public class GoodsReceipt
     public ICollection<Discrepancy> Discrepancies { get; set; } = new List<Discrepancy>();
 
     public ICollection<PutAwayTransaction> PutAways { get; set; } = new List<PutAwayTransaction>();
+
+    public ICollection<StockIn> StockIns { get; set; } = new List<StockIn>();
 }

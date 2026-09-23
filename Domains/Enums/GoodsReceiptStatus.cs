@@ -20,5 +20,11 @@ public enum GoodsReceiptStatus
     FullyPutAway = 5,
 
     [DbValue("Cancelled")]
-    Cancelled = 6
+    Cancelled = 6,
+
+    [DbValue("QaPending")]
+    QaPending = 7,
+
+    [DbValue("Rejected")]
+    Rejected = 8
 }

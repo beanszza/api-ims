@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using api_scm.Contracts.Responses;
+using Applications.Interfaces;
+using Domains.Entities;
 using Infrastructures.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -14,10 +16,17 @@ namespace api_scm.Api.Controllers;
 public class LossReportsController : ControllerBase
 {
     private readonly ScmDbContext _context;
+    private readonly ICurrentUserService _currentUser;
+    private readonly IAuditTrail _audit;
 
-    public LossReportsController(ScmDbContext context)
+    public LossReportsController(
+        ScmDbContext context,
+        ICurrentUserService currentUser,
+        IAuditTrail audit)
     {
         _context = context;
+        _currentUser = currentUser;
+        _audit = audit;
     }
 
     [HttpGet]
@@ -51,6 +60,9 @@ public class LossReportsController : ControllerBase
                     UomName = l.Item.Uom != null ? l.Item.Uom.Abbreviation : "Unit",
                     Reason = l.Reason,
                     Notes = l.Notes,
+                    IsAcknowledged = l.IsAcknowledged,
+                    AcknowledgedBy = l.AcknowledgedBy,
+                    AcknowledgedAt = l.AcknowledgedAt,
                     AuthorisedBy = l.AuthorisedBy,
                     CreatedBy = l.CreatedBy,
                     CreatedAt = l.CreatedAt,
@@ -101,6 +113,9 @@ public class LossReportsController : ControllerBase
                 UomName = l.Item.Uom?.Abbreviation ?? "Unit",
                 Reason = l.Reason,
                 Notes = l.Notes,
+                IsAcknowledged = l.IsAcknowledged,
+                AcknowledgedBy = l.AcknowledgedBy,
+                AcknowledgedAt = l.AcknowledgedAt,
                 AuthorisedBy = l.AuthorisedBy,
                 CreatedBy = l.CreatedBy,
                 CreatedAt = l.CreatedAt,
@@ -112,6 +127,42 @@ public class LossReportsController : ControllerBase
         catch (Exception ex)
         {
             return BadRequest(ApiResponse<LossReportResponse>.FailureResponse($"Failed to retrieve loss report: {ex.Message}"));
+        }
+    }
+
+    [HttpPost("{id:int}/acknowledge")]
+    public async Task<ActionResult<ApiResponse<LossReportResponse>>> Acknowledge(int id)
+    {
+        try
+        {
+            var l = await _context.LossReports
+                .Include(x => x.Item).ThenInclude(i => i.Uom)
+                .Include(x => x.Discrepancy)
+                .Include(x => x.GoodsReceipt).ThenInclude(g => g.PurchaseOrder).ThenInclude(po => po.PurchaseRequisition)
+                .Include(x => x.GoodsReceipt).ThenInclude(g => g.Supplier)
+                .FirstOrDefaultAsync(x => x.LossReportId == id);
+
+            if (l == null)
+                return NotFound(ApiResponse<LossReportResponse>.FailureResponse($"Loss report {id} not found."));
+
+            if (l.IsAcknowledged)
+                return BadRequest(ApiResponse<LossReportResponse>.FailureResponse($"Loss report {l.LossReportNumber} is already acknowledged."));
+
+            var actor = _currentUser.Current;
+            var now = DateTime.UtcNow;
+
+            l.IsAcknowledged = true;
+            l.AcknowledgedBy = actor.AuditName;
+            l.AcknowledgedAt = now;
+
+            await _context.SaveChangesAsync();
+            _audit.Record(nameof(LossReport), l.LossReportNumber, "Acknowledged", "IsAcknowledged", "false", "true");
+
+            return await GetById(id);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(ApiResponse<LossReportResponse>.FailureResponse($"Failed to acknowledge loss report: {ex.Message}"));
         }
     }
 }

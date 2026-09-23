@@ -3,6 +3,7 @@ using System;
 using Infrastructures.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -11,9 +12,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace api_scm.Migrations
 {
     [DbContext(typeof(ScmDbContext))]
-    partial class ScmDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260922034350_AddRtvApprovalAndLossAck")]
+    partial class AddRtvApprovalAndLossAck
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -947,15 +950,6 @@ namespace api_scm.Migrations
 
                     b.Property<int>("ReceivingLocationId")
                         .HasColumnType("integer");
-
-                    b.Property<DateTime?>("RejectedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("RejectedBy")
-                        .HasColumnType("text");
-
-                    b.Property<string>("RejectionReason")
-                        .HasColumnType("text");
 
                     b.Property<string>("Status")
                         .IsRequired()
@@ -2306,127 +2300,6 @@ namespace api_scm.Migrations
                     b.ToTable("ReturnToVendors");
                 });
 
-            modelBuilder.Entity("Domains.Entities.StockIn", b =>
-                {
-                    b.Property<int>("StockInId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("StockInId"));
-
-                    b.Property<DateTime?>("ApprovedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("ApprovedBy")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime>("CreatedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("CreatedBy")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<int>("GrnId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("RejectedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("RejectedBy")
-                        .HasColumnType("text");
-
-                    b.Property<string>("RejectionReason")
-                        .HasColumnType("text");
-
-                    b.Property<string>("Status")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("StockInNumber")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<DateTime?>("SubmittedAt")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<string>("SubmittedBy")
-                        .HasColumnType("text");
-
-                    b.HasKey("StockInId");
-
-                    b.HasIndex("GrnId")
-                        .HasDatabaseName("IX_StockIns_GrnId");
-
-                    b.HasIndex("StockInNumber")
-                        .IsUnique()
-                        .HasDatabaseName("IX_StockIns_StockInNumber");
-
-                    b.ToTable("StockIns");
-                });
-
-            modelBuilder.Entity("Domains.Entities.StockInLine", b =>
-                {
-                    b.Property<int>("StockInLineId")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("integer");
-
-                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("StockInLineId"));
-
-                    b.Property<bool>("CommittedToInventory")
-                        .HasColumnType("boolean");
-
-                    b.Property<decimal>("CurrentStockBeforeCommit")
-                        .HasPrecision(18, 3)
-                        .HasColumnType("numeric(18,3)");
-
-                    b.Property<DateTime?>("ExpiryDate")
-                        .HasColumnType("timestamp with time zone");
-
-                    b.Property<int?>("GrnItemId")
-                        .HasColumnType("integer");
-
-                    b.Property<int?>("InventoryLotId")
-                        .HasColumnType("integer");
-
-                    b.Property<int>("ItemId")
-                        .HasColumnType("integer");
-
-                    b.Property<string>("LotCode")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.Property<string>("Notes")
-                        .HasColumnType("text");
-
-                    b.Property<int?>("PurchaseUomId")
-                        .HasColumnType("integer");
-
-                    b.Property<decimal>("QuantityToStock")
-                        .HasPrecision(18, 3)
-                        .HasColumnType("numeric(18,3)");
-
-                    b.Property<int>("StockInId")
-                        .HasColumnType("integer");
-
-                    b.HasKey("StockInLineId");
-
-                    b.HasIndex("GrnItemId");
-
-                    b.HasIndex("InventoryLotId");
-
-                    b.HasIndex("ItemId");
-
-                    b.HasIndex("PurchaseUomId");
-
-                    b.HasIndex("StockInId");
-
-                    b.ToTable("StockInLines");
-                });
-
             modelBuilder.Entity("Domains.Entities.StockLedger", b =>
                 {
                     b.Property<long>("LedgerId")
@@ -3630,57 +3503,6 @@ namespace api_scm.Migrations
                     b.Navigation("Supplier");
                 });
 
-            modelBuilder.Entity("Domains.Entities.StockIn", b =>
-                {
-                    b.HasOne("Domains.Entities.GoodsReceipt", "GoodsReceipt")
-                        .WithMany("StockIns")
-                        .HasForeignKey("GrnId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("GoodsReceipt");
-                });
-
-            modelBuilder.Entity("Domains.Entities.StockInLine", b =>
-                {
-                    b.HasOne("Domains.Entities.GoodsReceiptItem", "GrnItem")
-                        .WithMany()
-                        .HasForeignKey("GrnItemId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Domains.Entities.InventoryLot", "InventoryLot")
-                        .WithMany()
-                        .HasForeignKey("InventoryLotId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
-                    b.HasOne("Domains.Entities.Item", "Item")
-                        .WithMany()
-                        .HasForeignKey("ItemId")
-                        .OnDelete(DeleteBehavior.Restrict)
-                        .IsRequired();
-
-                    b.HasOne("Domains.Entities.UnitOfMeasure", "PurchaseUom")
-                        .WithMany()
-                        .HasForeignKey("PurchaseUomId")
-                        .OnDelete(DeleteBehavior.Restrict);
-
-                    b.HasOne("Domains.Entities.StockIn", "StockIn")
-                        .WithMany("Lines")
-                        .HasForeignKey("StockInId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("GrnItem");
-
-                    b.Navigation("InventoryLot");
-
-                    b.Navigation("Item");
-
-                    b.Navigation("PurchaseUom");
-
-                    b.Navigation("StockIn");
-                });
-
             modelBuilder.Entity("Domains.Entities.StockLedger", b =>
                 {
                     b.HasOne("Domains.Entities.Item", "Item")
@@ -3849,8 +3671,6 @@ namespace api_scm.Migrations
                     b.Navigation("Items");
 
                     b.Navigation("PutAways");
-
-                    b.Navigation("StockIns");
                 });
 
             modelBuilder.Entity("Domains.Entities.Item", b =>
@@ -3909,11 +3729,6 @@ namespace api_scm.Migrations
                     b.Navigation("ProductionBatches");
 
                     b.Navigation("RecipeIngredients");
-                });
-
-            modelBuilder.Entity("Domains.Entities.StockIn", b =>
-                {
-                    b.Navigation("Lines");
                 });
 
             modelBuilder.Entity("Domains.Entities.Supplier", b =>

@@ -56,6 +56,9 @@ public class LossReportResponse
     public string UomName { get; set; } = string.Empty;
     public string Reason { get; set; } = string.Empty;
     public string? Notes { get; set; }
+    public bool IsAcknowledged { get; set; }
+    public string? AcknowledgedBy { get; set; }
+    public DateTime? AcknowledgedAt { get; set; }
     public string AuthorisedBy { get; set; } = string.Empty;
     public string CreatedBy { get; set; } = string.Empty;
     public DateTime CreatedAt { get; set; }

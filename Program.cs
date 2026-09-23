@@ -175,6 +175,7 @@ builder.Services.AddScoped<IGoodsReceiptService, GoodsReceiptService>();
 builder.Services.AddScoped<IQualityInspectionService, QualityInspectionService>();
 builder.Services.AddScoped<IDiscrepancyService, DiscrepancyService>();
 builder.Services.AddScoped<IPutAwayService, PutAwayService>();
+builder.Services.AddScoped<IStockInService, StockInService>();
 builder.Services.AddScoped<INcrService, NcrService>();
 builder.Services.AddScoped<ISupplierScorecardService, SupplierScorecardService>();
 builder.Services.AddScoped<IAllocationService, AllocationService>();

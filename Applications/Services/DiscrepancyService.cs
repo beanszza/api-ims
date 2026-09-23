@@ -268,6 +268,7 @@ public class DiscrepancyService : IDiscrepancyService
                 UomName = dsc.Item.Uom?.Abbreviation ?? "Unit",
                 Reason = lossReport.Reason,
                 Notes = lossReport.Notes,
+                IsAcknowledged = false,
                 AuthorisedBy = lossReport.AuthorisedBy,
                 CreatedBy = lossReport.CreatedBy,
                 CreatedAt = lossReport.CreatedAt,
@@ -331,7 +332,8 @@ public class DiscrepancyService : IDiscrepancyService
                 LotId = lot.LotId,
                 ReturnedQuantity = dsc.DiscrepancyQuantity,
                 Reason = request.Reason ?? $"Return arising from Discrepancy {dsc.DiscrepancyNumber}",
-                Status = RtvStatus.PendingDispatch,
+                ApprovalRequestNotes = request.Notes,
+                Status = RtvStatus.PendingApproval,
                 CreatedBy = actor.AuditName,
                 CreatedAt = now
             };
@@ -357,7 +359,7 @@ public class DiscrepancyService : IDiscrepancyService
                     _context.NonConformanceReports.Update(dsc.NonConformanceReport);
                 }
 
-                _audit.Record(nameof(ReturnToVendor), rtvNumber, "Created", "Status", null, "PendingDispatch");
+                _audit.Record(nameof(ReturnToVendor), rtvNumber, "Created", "Status", null, "PendingApproval");
                 return rtv;
             });
 

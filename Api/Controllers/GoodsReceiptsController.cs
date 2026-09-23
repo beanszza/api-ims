@@ -67,6 +67,25 @@ public class GoodsReceiptsController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
+    /// <summary>Advances a GRN to QA Inspection (sets status to QaPending).</summary>
+    [HttpPost("{id:int}/proceed-to-qa")]
+    public async Task<ActionResult<ApiResponse<GoodsReceiptResponse>>> ProceedToQa(int id)
+    {
+        var result = await _grnService.ProceedToQaAsync(id);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>Rejects an entire shipment at the receiving gate, logging discrepancies.</summary>
+    [HttpPost("{id:int}/reject")]
+    public async Task<ActionResult<ApiResponse<GoodsReceiptResponse>>> Reject(int id, [FromBody] RejectGrnRequest request)
+    {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+
+        var result = await _grnService.RejectGrnAsync(id, request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
     /// <summary>Cancels a Draft GRN.</summary>
     [HttpPost("{id:int}/cancel")]
     public async Task<ActionResult<ApiResponse<GoodsReceiptResponse>>> Cancel(int id)

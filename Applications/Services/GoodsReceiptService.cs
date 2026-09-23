@@ -132,11 +132,16 @@ public class GoodsReceiptService : IGoodsReceiptService
 
             var grnNumber = await _documentNumbers.NextAsync(DocumentType.GoodsReceipt, receiveDate);
 
-            // Fetch previously received quantities for these PO items from already posted GRNs
-            if (request.Items.Select(i => i.DeliveryItemId).Distinct().Count() != request.Items.Count || request.Items.Any(i => !i.DeliveryItemId.HasValue))
-                return ApiResponse<GoodsReceiptResponse>.FailureResponse("Each GRN line must reference one unique delivery item.");
+            // Check delivery item reference
+            if (request.Items.Any(i => !i.DeliveryItemId.HasValue))
+                return ApiResponse<GoodsReceiptResponse>.FailureResponse("Each GRN line must reference a valid delivery item.");
 
-            var poItemIds = request.Items.Select(i => i.PoItemId).ToList();
+            var itemBatchTotals = request.Items
+                .Where(i => i.DeliveryItemId.HasValue)
+                .GroupBy(i => i.DeliveryItemId!.Value)
+                .ToDictionary(g => g.Key, g => g.Sum(x => x.DeliveredQuantity));
+
+            var poItemIds = request.Items.Select(i => i.PoItemId).Distinct().ToList();
             var prevReceivedLookup = await _context.GoodsReceiptItems
                 .Where(gri => poItemIds.Contains(gri.PoItemId) 
                            && gri.GoodsReceipt.Status != GoodsReceiptStatus.Draft 
@@ -180,7 +185,8 @@ public class GoodsReceiptService : IGoodsReceiptService
                 var prevRcv = prevReceivedLookup.TryGetValue(itemReq.PoItemId, out var val) ? val : 0;
                 var declared = deliveryItem.DeclaredQuantity;
                 var delivered = itemReq.DeliveredQuantity;
-                var variance = delivered - declared;
+                var totalDeliveredForDeliveryItem = itemBatchTotals.TryGetValue(deliveryItem.DeliveryItemId, out var batchTotal) ? batchTotal : delivered;
+                var variance = totalDeliveredForDeliveryItem - declared;
                 var varianceType = variance < 0 ? "Short" : (variance > 0 ? "Over" : "Exact");
 
                 grnItems.Add(new GoodsReceiptItem
@@ -320,19 +326,30 @@ public class GoodsReceiptService : IGoodsReceiptService
                     if (!item.DeliveryItemId.HasValue || !await _context.DeliveryItems.AnyAsync(di => di.DeliveryItemId == item.DeliveryItemId && di.DeliveryId == grn.DeliveryId && di.PoItemId == item.PoItemId && di.ItemId == item.ItemId))
                         throw new InvalidOperationException("A GRN item no longer has a valid delivery-item source.");
 
+                    poItem.ReceivedQuantity += item.DeliveredQuantity;
+                }
+
+                // Group batches by DeliveryItemId to validate delivery limits and create aggregated discrepancies
+                var deliveryGroups = grn.Items.Where(i => i.DeliveryItemId.HasValue).GroupBy(i => i.DeliveryItemId!.Value);
+                foreach (var group in deliveryGroups)
+                {
+                    var deliveryItemId = group.Key;
+                    var firstItem = group.First();
+                    var declared = firstItem.DeclaredQuantity ?? 0m;
+                    var totalDeliveredInThisGrn = group.Sum(i => i.DeliveredQuantity);
+
                     var alreadyReceivedForDelivery = await _context.GoodsReceiptItems
-                        .Where(existing => existing.DeliveryItemId == item.DeliveryItemId
+                        .Where(existing => existing.DeliveryItemId == deliveryItemId
                             && existing.GoodsReceipt.GrnId != grn.GrnId
                             && existing.GoodsReceipt.Status != GoodsReceiptStatus.Draft
                             && existing.GoodsReceipt.Status != GoodsReceiptStatus.Cancelled)
                         .SumAsync(existing => (decimal?)existing.DeliveredQuantity) ?? 0m;
-                    if ((item.DeclaredQuantity ?? 0m) > 0 && alreadyReceivedForDelivery >= (item.DeclaredQuantity ?? 0m))
+
+                    if (declared > 0 && alreadyReceivedForDelivery >= declared)
                         throw new InvalidOperationException($"This delivery item has already been fully received.");
 
-                    poItem.ReceivedQuantity += item.DeliveredQuantity;
-
-                    // Shipment discrepancy is actual versus this delivery's declared quantity.
-                    var variance = item.DeliveredQuantity - (item.DeclaredQuantity ?? 0m);
+                    // Shipment discrepancy is total actual received across all batches versus this delivery's declared quantity.
+                    var variance = totalDeliveredInThisGrn - declared;
 
                     if (variance < 0)
                     {
@@ -348,10 +365,10 @@ public class GoodsReceiptService : IGoodsReceiptService
                             PoNumber = po.PoNumber,
                             DeliveryId = grn.DeliveryId,
                             DeliveryNumber = grn.Delivery?.DeliveryNumber,
-                            ItemId = item.ItemId,
-                            OrderedQuantity = item.OrderedQuantity,
-                            PreviouslyReceivedQty = item.PreviouslyReceivedQuantity,
-                            CurrentReceivedQty = item.DeliveredQuantity,
+                            ItemId = firstItem.ItemId,
+                            OrderedQuantity = firstItem.OrderedQuantity,
+                            PreviouslyReceivedQty = firstItem.PreviouslyReceivedQuantity,
+                            CurrentReceivedQty = totalDeliveredInThisGrn,
                             DiscrepancyQuantity = Math.Abs(variance),
                             Status = DiscrepancyStatus.Open,
                             CreatedAt = now
@@ -372,10 +389,10 @@ public class GoodsReceiptService : IGoodsReceiptService
                             PoNumber = po.PoNumber,
                             DeliveryId = grn.DeliveryId,
                             DeliveryNumber = grn.Delivery?.DeliveryNumber,
-                            ItemId = item.ItemId,
-                            OrderedQuantity = item.OrderedQuantity,
-                            PreviouslyReceivedQty = item.PreviouslyReceivedQuantity,
-                            CurrentReceivedQty = item.DeliveredQuantity,
+                            ItemId = firstItem.ItemId,
+                            OrderedQuantity = firstItem.OrderedQuantity,
+                            PreviouslyReceivedQty = firstItem.PreviouslyReceivedQuantity,
+                            CurrentReceivedQty = totalDeliveredInThisGrn,
                             DiscrepancyQuantity = variance,
                             Status = DiscrepancyStatus.Open,
                             CreatedAt = now
@@ -448,6 +465,116 @@ public class GoodsReceiptService : IGoodsReceiptService
         }
     }
 
+    public async Task<ApiResponse<GoodsReceiptResponse>> ProceedToQaAsync(int grnId)
+    {
+        try
+        {
+            var grn = await _context.GoodsReceipts.FirstOrDefaultAsync(g => g.GrnId == grnId);
+            if (grn == null)
+                return ApiResponse<GoodsReceiptResponse>.FailureResponse($"GRN {grnId} not found.");
+
+            if (grn.Status != GoodsReceiptStatus.Draft && grn.Status != GoodsReceiptStatus.Received)
+                return ApiResponse<GoodsReceiptResponse>.FailureResponse($"GRN {grn.GrnNumber} is already in status {grn.Status}.");
+
+            var oldStatus = grn.Status.ToString();
+            grn.Status = GoodsReceiptStatus.QaPending;
+            await _context.SaveChangesAsync();
+
+            _audit.Record(nameof(GoodsReceipt), grn.GrnNumber, "ProceedToQa", "Status", oldStatus, "QaPending");
+            var reloaded = await ReloadGrnAsync(grn.GrnId);
+            return ApiResponse<GoodsReceiptResponse>.SuccessResponse(MapToResponse(reloaded), $"GRN {grn.GrnNumber} proceeded to QA Inspection.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error advancing GRN {GrnId} to QA", grnId);
+            return ApiResponse<GoodsReceiptResponse>.FailureResponse($"Failed to advance GRN to QA: {ex.Message}");
+        }
+    }
+
+    public async Task<ApiResponse<GoodsReceiptResponse>> RejectGrnAsync(int grnId, RejectGrnRequest request)
+    {
+        try
+        {
+            var grn = await _context.GoodsReceipts
+                .Include(g => g.PurchaseOrder)
+                .Include(g => g.Delivery)
+                .Include(g => g.Items)
+                .FirstOrDefaultAsync(g => g.GrnId == grnId);
+
+            if (grn == null)
+                return ApiResponse<GoodsReceiptResponse>.FailureResponse($"GRN {grnId} not found.");
+
+            if (grn.Status == GoodsReceiptStatus.FullyPutAway || grn.Status == GoodsReceiptStatus.Cancelled)
+                return ApiResponse<GoodsReceiptResponse>.FailureResponse($"GRN {grn.GrnNumber} is {grn.Status} and cannot be rejected.");
+
+            var actor = _currentUser.Current;
+            var now = DateTime.UtcNow;
+
+            await _posting.ExecuteAsync(async () =>
+            {
+                var oldStatus = grn.Status.ToString();
+                grn.Status = GoodsReceiptStatus.Rejected;
+                grn.RejectedBy = actor.AuditName;
+                grn.RejectedAt = now;
+                grn.RejectionReason = request.Reason;
+                if (!string.IsNullOrWhiteSpace(request.Notes))
+                {
+                    grn.Notes = string.IsNullOrWhiteSpace(grn.Notes) ? request.Notes : $"{grn.Notes} | {request.Notes}";
+                }
+
+                // Automatically record Discrepancy for each item in the shipment
+                foreach (var item in grn.Items)
+                {
+                    var dscNum = await _documentNumbers.NextAsync(DocumentType.Discrepancy, now);
+                    var rejectedQty = item.DeliveredQuantity > 0 ? item.DeliveredQuantity : (item.DeclaredQuantity ?? item.OrderedQuantity);
+                    var dsc = new Discrepancy
+                    {
+                        DiscrepancyNumber = dscNum,
+                        DiscrepancyType = DiscrepancyType.Rejected,
+                        GrnId = grn.GrnId,
+                        GrnNumber = grn.GrnNumber,
+                        PoId = grn.PoId,
+                        PoNumber = grn.PurchaseOrder?.PoNumber ?? $"PO-{grn.PoId}",
+                        DeliveryId = grn.DeliveryId,
+                        DeliveryNumber = grn.Delivery?.DeliveryNumber,
+                        ItemId = item.ItemId,
+                        OrderedQuantity = item.OrderedQuantity,
+                        PreviouslyReceivedQty = item.PreviouslyReceivedQuantity,
+                        CurrentReceivedQty = item.DeliveredQuantity,
+                        DiscrepancyQuantity = rejectedQty,
+                        Status = DiscrepancyStatus.Open,
+                        ResolutionNotes = $"Shipment Rejected: {request.Reason}" + (!string.IsNullOrWhiteSpace(request.Notes) ? $" - {request.Notes}" : ""),
+                        CreatedAt = now
+                    };
+                    _context.Discrepancies.Add(dsc);
+                }
+
+                // If QA inspection exists, mark as Failed
+                var inspections = await _context.QualityInspections
+                    .Where(q => q.ReferenceType == "GRN" && q.ReferenceId == grn.GrnId)
+                    .ToListAsync();
+                foreach (var insp in inspections)
+                {
+                    insp.Status = QualityInspectionStatus.Failed;
+                    insp.OverallNotes = $"Shipment rejected at receiving gate: {request.Reason}";
+                    _context.QualityInspections.Update(insp);
+                }
+
+                _context.GoodsReceipts.Update(grn);
+                _audit.Record(nameof(GoodsReceipt), grn.GrnNumber, "RejectedShipment", "Status", oldStatus, "Rejected");
+                return grn;
+            });
+
+            var reloaded = await ReloadGrnAsync(grn.GrnId);
+            return ApiResponse<GoodsReceiptResponse>.SuccessResponse(MapToResponse(reloaded), $"Shipment for GRN {grn.GrnNumber} rejected. Discrepancies logged.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error rejecting GRN {GrnId}", grnId);
+            return ApiResponse<GoodsReceiptResponse>.FailureResponse($"Failed to reject GRN: {ex.Message}");
+        }
+    }
+
     public async Task<ApiResponse<GoodsReceiptResponse>> CancelGrnAsync(int grnId)
     {
         try
@@ -517,6 +644,9 @@ public class GoodsReceiptService : IGoodsReceiptService
         PostedBy = g.PostedBy,
         PostedAt = g.PostedAt,
         Status = EnumDbValue.ToDbValue(g.Status),
+        RejectedBy = g.RejectedBy,
+        RejectedAt = g.RejectedAt,
+        RejectionReason = g.RejectionReason,
         Notes = g.Notes,
         Items = g.Items.Select(i => new GoodsReceiptItemResponse
         {

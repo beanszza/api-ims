@@ -29,6 +29,9 @@ public class GoodsReceiptResponse
     public string? PostedBy { get; set; }
     public DateTime? PostedAt { get; set; }
     public string Status { get; set; } = string.Empty;
+    public string? RejectedBy { get; set; }
+    public DateTime? RejectedAt { get; set; }
+    public string? RejectionReason { get; set; }
     public string? Notes { get; set; }
     public List<GoodsReceiptItemResponse> Items { get; set; } = new();
 }

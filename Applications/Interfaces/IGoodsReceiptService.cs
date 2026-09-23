@@ -12,6 +12,8 @@ public interface IGoodsReceiptService
     Task<ApiResponse<GoodsReceiptResponse>> CreateDraftGrnAsync(CreateGoodsReceiptRequest request);
     Task<ApiResponse<GoodsReceiptResponse>> UpdateDraftGrnAsync(int grnId, UpdateGoodsReceiptRequest request);
     Task<ApiResponse<GoodsReceiptResponse>> PostGrnAsync(int grnId);
+    Task<ApiResponse<GoodsReceiptResponse>> ProceedToQaAsync(int grnId);
+    Task<ApiResponse<GoodsReceiptResponse>> RejectGrnAsync(int grnId, RejectGrnRequest request);
     Task<ApiResponse<GoodsReceiptResponse>> CancelGrnAsync(int grnId);
     Task<ApiResponse<GoodsReceiptResponse>> ReceiveGoodsAsync(CreateGoodsReceiptRequest request);
 }

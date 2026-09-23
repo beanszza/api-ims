@@ -36,6 +36,8 @@ public class ScmDbContext : DbContext
     public DbSet<ReturnToVendor> ReturnToVendors { get; set; }
     public DbSet<Discrepancy> Discrepancies { get; set; }
     public DbSet<PutAwayTransaction> PutAwayTransactions { get; set; }
+    public DbSet<StockIn> StockIns { get; set; }
+    public DbSet<StockInLine> StockInLines { get; set; }
     public DbSet<LossReport> LossReports { get; set; }
 
     // --- PRODUCTION & MANUFACTURING ---
@@ -149,6 +151,7 @@ public class ScmDbContext : DbContext
         ConfigureReturnToVendors(modelBuilder);
         ConfigureDiscrepancies(modelBuilder);
         ConfigurePutAwayTransactions(modelBuilder);
+        ConfigureStockIns(modelBuilder);
         ConfigureLossReports(modelBuilder);
         ConfigureDisposalRecords(modelBuilder);
         ConfigureBranchDistribution(modelBuilder);
@@ -507,6 +510,9 @@ public class ScmDbContext : DbContext
         modelBuilder.Entity<StockTransfer>().Property(e => e.TransferQuantity).HasPrecision(precision, scale);
 
         modelBuilder.Entity<InventoryMovementLog>().Property(e => e.ChangeQuantity).HasPrecision(precision, scale);
+
+        modelBuilder.Entity<StockInLine>().Property(e => e.QuantityToStock).HasPrecision(precision, scale);
+        modelBuilder.Entity<StockInLine>().Property(e => e.CurrentStockBeforeCommit).HasPrecision(precision, scale);
     }
 
     /// <summary>
@@ -563,6 +569,11 @@ public class ScmDbContext : DbContext
         modelBuilder.Entity<PutAwayTransaction>()
             .Property(e => e.Status)
             .HasConversion(EnumTextConverter<PutAwayStatus>())
+            .HasColumnType("text");
+
+        modelBuilder.Entity<StockIn>()
+            .Property(e => e.Status)
+            .HasConversion(EnumTextConverter<StockInStatus>())
             .HasColumnType("text");
 
         modelBuilder.Entity<QualityInspection>()
@@ -978,6 +989,53 @@ public class ScmDbContext : DbContext
         pa.HasOne(p => p.Lot)
             .WithMany()
             .HasForeignKey(p => p.LotId)
+            .OnDelete(DeleteBehavior.SetNull);
+    }
+
+    private static void ConfigureStockIns(ModelBuilder modelBuilder)
+    {
+        var si = modelBuilder.Entity<StockIn>();
+
+        si.HasKey(s => s.StockInId);
+
+        si.HasIndex(s => s.StockInNumber)
+            .IsUnique()
+            .HasDatabaseName("IX_StockIns_StockInNumber");
+
+        si.HasIndex(s => s.GrnId).HasDatabaseName("IX_StockIns_GrnId");
+
+        si.HasOne(s => s.GoodsReceipt)
+            .WithMany(g => g.StockIns)
+            .HasForeignKey(s => s.GrnId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        si.HasMany(s => s.Lines)
+            .WithOne(l => l.StockIn)
+            .HasForeignKey(l => l.StockInId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        var sil = modelBuilder.Entity<StockInLine>();
+
+        sil.HasKey(l => l.StockInLineId);
+
+        sil.HasOne(l => l.Item)
+            .WithMany()
+            .HasForeignKey(l => l.ItemId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        sil.HasOne(l => l.PurchaseUom)
+            .WithMany()
+            .HasForeignKey(l => l.PurchaseUomId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        sil.HasOne(l => l.GrnItem)
+            .WithMany()
+            .HasForeignKey(l => l.GrnItemId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        sil.HasOne(l => l.InventoryLot)
+            .WithMany()
+            .HasForeignKey(l => l.InventoryLotId)
             .OnDelete(DeleteBehavior.SetNull);
     }
 

@@ -26,7 +26,19 @@ public class ReturnToVendor
 
     public string Reason { get; set; } = string.Empty;
 
-    public RtvStatus Status { get; set; } = RtvStatus.PendingDispatch;
+    public RtvStatus Status { get; set; } = RtvStatus.PendingApproval;
+
+    public string? ApprovalRequestNotes { get; set; }
+
+    public string? ApprovedBy { get; set; }
+
+    public DateTime? ApprovedAt { get; set; }
+
+    public string? RejectedBy { get; set; }
+
+    public DateTime? RejectedAt { get; set; }
+
+    public string? RejectionReason { get; set; }
 
     public DateTime? DispatchedDate { get; set; }
 
