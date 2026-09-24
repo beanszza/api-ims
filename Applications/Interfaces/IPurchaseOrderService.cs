@@ -10,7 +10,7 @@ namespace Applications.Interfaces;
 public interface IPurchaseOrderService
 {
     Task<ApiResponse<PurchaseOrderResponse>> CreatePurchaseOrderAsync(CreatePurchaseOrderRequest request);
-    Task<ApiResponse<PagedData<PurchaseOrderResponse>>> GetPurchaseOrdersAsync(string? status = null, string? search = null, int page = 1, int pageSize = 10);
+    Task<ApiResponse<PagedData<PurchaseOrderResponse>>> GetPurchaseOrdersAsync(string? status = null, string? search = null, int page = 1, int pageSize = 10, bool? eligibleForDelivery = null);
     Task<ApiResponse<PurchaseOrderResponse>> GetPurchaseOrderByIdAsync(int id);
     Task<ApiResponse<PurchaseOrderResponse>> UpdateOrderStatusAsync(int id, UpdatePurchaseOrderQaRequest request);
     Task<ApiResponse<PurchaseOrderResponse>> UpdatePurchaseOrderAsync(int id, CreatePurchaseOrderRequest request);

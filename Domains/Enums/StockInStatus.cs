@@ -14,5 +14,8 @@ public enum StockInStatus
     Approved = 3,
 
     [DbValue("Rejected")]
-    Rejected = 4
+    Rejected = 4,
+
+    [DbValue("Committed")]
+    Committed = 5
 }

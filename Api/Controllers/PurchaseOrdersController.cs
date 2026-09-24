@@ -33,11 +33,16 @@ public class PurchaseOrdersController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<ActionResult<ApiResponse<PagedData<PurchaseOrderResponse>>>> GetPurchaseOrders([FromQuery] string? status = null, [FromQuery] string? search = null, [FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+    public async Task<ActionResult<ApiResponse<PagedData<PurchaseOrderResponse>>>> GetPurchaseOrders(
+        [FromQuery] string? status = null,
+        [FromQuery] string? search = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] bool? eligibleForDelivery = null)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
         page = Math.Max(page, 1);
-        var result = await _purchaseOrderService.GetPurchaseOrdersAsync(status, search, page, pageSize);
+        var result = await _purchaseOrderService.GetPurchaseOrdersAsync(status, search, page, pageSize, eligibleForDelivery);
         return result.Success ? Ok(result) : StatusCode(500, result);
     }
 

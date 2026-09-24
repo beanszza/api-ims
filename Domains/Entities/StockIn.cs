@@ -29,6 +29,9 @@ public class StockIn
     public DateTime? RejectedAt { get; set; }
     public string? RejectionReason { get; set; }
 
+    public string? CommittedBy { get; set; }
+    public DateTime? CommittedAt { get; set; }
+
     public string? Notes { get; set; }
 
     public ICollection<StockInLine> Lines { get; set; } = new List<StockInLine>();

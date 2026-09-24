@@ -6,8 +6,9 @@ using Microsoft.AspNetCore.Mvc;
 
 namespace api_scm.Api.Controllers;
 
-[ApiController]
-[Route("api/[controller]")]
+// [ApiController]
+// [Route("api/[controller]")]
+// Disabled as requested
 public class MrpController : ControllerBase
 {
     private readonly IMrpService _mrpService;

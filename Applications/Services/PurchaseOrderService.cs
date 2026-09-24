@@ -206,7 +206,12 @@ public class PurchaseOrderService : IPurchaseOrderService
         }
     }
 
-    public async Task<ApiResponse<PagedData<PurchaseOrderResponse>>> GetPurchaseOrdersAsync(string? status = null, string? search = null, int page = 1, int pageSize = 10)
+    public async Task<ApiResponse<PagedData<PurchaseOrderResponse>>> GetPurchaseOrdersAsync(
+        string? status = null,
+        string? search = null,
+        int page = 1,
+        int pageSize = 10,
+        bool? eligibleForDelivery = null)
     {
         try
         {
@@ -221,7 +226,17 @@ public class PurchaseOrderService : IPurchaseOrderService
                     .ThenInclude(poi => poi.PurchaseUom)
                 .AsQueryable();
 
-            if (!string.IsNullOrWhiteSpace(status) && !status.Equals("All", StringComparison.OrdinalIgnoreCase))
+            if (eligibleForDelivery == true)
+            {
+                query = query.Where(o => (o.Status == PurchaseOrderStatus.Approved || o.Status == PurchaseOrderStatus.Ordered)
+                    && o.PurchaseOrderItems.Any(poi =>
+                        poi.PoItemQuantity > poi.ReceivedQuantity +
+                            (_context.DeliveryItems
+                                .Where(di => di.PoItemId == poi.PoItemId && (di.Delivery.Status == DeliveryStatus.Scheduled || di.Delivery.Status == DeliveryStatus.InTransit))
+                                .Sum(di => (decimal?)di.DeclaredQuantity) ?? 0m)
+                    ));
+            }
+            else if (!string.IsNullOrWhiteSpace(status) && !status.Equals("All", StringComparison.OrdinalIgnoreCase))
             {
                 if (!EnumDbValue.TryParse<PurchaseOrderStatus>(status, out var statusFilter))
                 {

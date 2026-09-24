@@ -223,6 +223,50 @@ public class StockInService : IStockInService
             if (stockIn.Status != StockInStatus.PendingApproval && stockIn.Status != StockInStatus.Draft)
                 return ApiResponse<StockInResponse>.FailureResponse($"Stock-In {stockIn.StockInNumber} is {stockIn.Status} and cannot be approved.");
 
+            var now = DateTime.UtcNow;
+            var actor = _currentUser.Current;
+            var approver = !string.IsNullOrWhiteSpace(request.ApproverName) ? request.ApproverName.Trim() : actor.AuditName;
+
+            stockIn.Status = StockInStatus.Approved;
+            stockIn.ApprovedBy = approver;
+            stockIn.ApprovedAt = now;
+            if (!string.IsNullOrWhiteSpace(request.Notes))
+            {
+                stockIn.Notes = string.IsNullOrWhiteSpace(stockIn.Notes)
+                    ? $"Approval notes: {request.Notes}"
+                    : $"{stockIn.Notes} | Approval notes: {request.Notes}";
+            }
+
+            _context.StockIns.Update(stockIn);
+            await _context.SaveChangesAsync();
+            _audit.Record(nameof(StockIn), stockIn.StockInNumber, "Approved", "Status", "PendingApproval", "Approved");
+
+            var reloaded = await ReloadStockInAsync(id);
+            return ApiResponse<StockInResponse>.SuccessResponse(MapToResponse(reloaded), $"Stock-In {stockIn.StockInNumber} approved successfully. Lot labels are ready for download prior to inventory commit.");
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error approving Stock-In {Id}", id);
+            return ApiResponse<StockInResponse>.FailureResponse($"Failed to approve Stock-In: {ex.Message}");
+        }
+    }
+
+    public async Task<ApiResponse<StockInResponse>> CommitStockInAsync(int id, CommitStockInRequest? request = null)
+    {
+        try
+        {
+            var stockIn = await _context.StockIns
+                .Include(s => s.GoodsReceipt).ThenInclude(g => g.PurchaseOrder).ThenInclude(po => po.PurchaseOrderItems)
+                .Include(s => s.GoodsReceipt).ThenInclude(g => g.Supplier)
+                .Include(s => s.Lines).ThenInclude(l => l.Item)
+                .FirstOrDefaultAsync(s => s.StockInId == id);
+
+            if (stockIn == null)
+                return ApiResponse<StockInResponse>.FailureResponse($"Stock-In {id} not found.");
+
+            if (stockIn.Status != StockInStatus.Approved)
+                return ApiResponse<StockInResponse>.FailureResponse($"Stock-In {stockIn.StockInNumber} must be in 'Approved' status to commit to inventory (current status: {stockIn.Status}).");
+
             var warehouseLoc = await _context.Locations.FirstOrDefaultAsync(l => l.LocationType == LocationType.Warehouse)
                 ?? await _context.Locations.FirstOrDefaultAsync();
 
@@ -231,18 +275,18 @@ public class StockInService : IStockInService
 
             var now = DateTime.UtcNow;
             var actor = _currentUser.Current;
-            var approver = !string.IsNullOrWhiteSpace(request.ApproverName) ? request.ApproverName.Trim() : actor.AuditName;
+            var committer = !string.IsNullOrWhiteSpace(request?.CommitterName) ? request.CommitterName.Trim() : actor.AuditName;
 
             await _posting.ExecuteAsync(async () =>
             {
-                stockIn.Status = StockInStatus.Approved;
-                stockIn.ApprovedBy = approver;
-                stockIn.ApprovedAt = now;
-                if (!string.IsNullOrWhiteSpace(request.Notes))
+                stockIn.Status = StockInStatus.Committed;
+                stockIn.CommittedBy = committer;
+                stockIn.CommittedAt = now;
+                if (!string.IsNullOrWhiteSpace(request?.Notes))
                 {
                     stockIn.Notes = string.IsNullOrWhiteSpace(stockIn.Notes)
-                        ? $"Approval notes: {request.Notes}"
-                        : $"{stockIn.Notes} | Approval notes: {request.Notes}";
+                        ? $"Commit notes: {request.Notes}"
+                        : $"{stockIn.Notes} | Commit notes: {request.Notes}";
                 }
 
                 foreach (var line in stockIn.Lines)
@@ -291,8 +335,8 @@ public class StockInService : IStockInService
                         ReferenceType = "StockIn",
                         ReferenceId = stockIn.StockInNumber,
                         UserId = actor.UserId,
-                        UserName = approver,
-                        Notes = $"Stock-In approved by {approver} via {stockIn.StockInNumber}"
+                        UserName = committer,
+                        Notes = $"Stock-In committed by {committer} via {stockIn.StockInNumber}"
                     };
                     _context.StockLedgers.Add(ledger);
                 }
@@ -317,17 +361,17 @@ public class StockInService : IStockInService
                 }
 
                 _context.StockIns.Update(stockIn);
-                _audit.Record(nameof(StockIn), stockIn.StockInNumber, "Approved", "Status", "PendingApproval", "Approved");
+                _audit.Record(nameof(StockIn), stockIn.StockInNumber, "Committed", "Status", "Approved", "Committed");
                 return stockIn;
             });
 
             var reloaded = await ReloadStockInAsync(id);
-            return ApiResponse<StockInResponse>.SuccessResponse(MapToResponse(reloaded), $"Stock-In {stockIn.StockInNumber} approved and committed to inventory.");
+            return ApiResponse<StockInResponse>.SuccessResponse(MapToResponse(reloaded), $"Stock-In {stockIn.StockInNumber} committed to inventory successfully.");
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error approving Stock-In {Id}", id);
-            return ApiResponse<StockInResponse>.FailureResponse($"Failed to approve Stock-In: {ex.Message}");
+            _logger.LogError(ex, "Error committing Stock-In {Id}", id);
+            return ApiResponse<StockInResponse>.FailureResponse($"Failed to commit Stock-In: {ex.Message}");
         }
     }
 
@@ -339,8 +383,8 @@ public class StockInService : IStockInService
             if (stockIn == null)
                 return ApiResponse<StockInResponse>.FailureResponse($"Stock-In {id} not found.");
 
-            if (stockIn.Status == StockInStatus.Approved)
-                return ApiResponse<StockInResponse>.FailureResponse($"Stock-In {stockIn.StockInNumber} is already approved and cannot be rejected.");
+            if (stockIn.Status == StockInStatus.Approved || stockIn.Status == StockInStatus.Committed)
+                return ApiResponse<StockInResponse>.FailureResponse($"Stock-In {stockIn.StockInNumber} is {stockIn.Status} and cannot be rejected.");
 
             var actor = _currentUser.Current;
             var now = DateTime.UtcNow;
@@ -417,6 +461,8 @@ public class StockInService : IStockInService
             RejectedBy = s.RejectedBy,
             RejectedAt = s.RejectedAt,
             RejectionReason = s.RejectionReason,
+            CommittedBy = s.CommittedBy,
+            CommittedAt = s.CommittedAt,
             Notes = s.Notes,
             Lines = s.Lines.Select(l => new StockInLineResponse
             {

@@ -54,3 +54,10 @@ public class RejectStockInRequest
 
     public string? Notes { get; set; }
 }
+
+public class CommitStockInRequest
+{
+    public string? CommitterName { get; set; }
+
+    public string? Notes { get; set; }
+}

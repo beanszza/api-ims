@@ -272,6 +272,7 @@ var allowedOrigins = new List<string>
     "http://localhost:5006",
     "https://localhost:3000",
     "https://localhost:3003"
+
 };
 if (!string.IsNullOrWhiteSpace(allowedOriginsEnv))
 {

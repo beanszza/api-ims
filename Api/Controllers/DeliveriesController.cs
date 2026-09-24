@@ -25,13 +25,14 @@ public class DeliveriesController : ControllerBase
     public async Task<ActionResult<ApiResponse<PagedData<DeliveryResponse>>>> GetAll(
         [FromQuery] int? poId,
         [FromQuery] string? status,
+        [FromQuery] bool? eligibleForGrn,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 50,
         CancellationToken ct = default)
     {
         pageSize = Math.Clamp(pageSize, 1, 100);
         page = Math.Max(page, 1);
-        var result = await _deliveryService.GetDeliveriesAsync(poId, status, page, pageSize, ct);
+        var result = await _deliveryService.GetDeliveriesAsync(poId, status, page, pageSize, eligibleForGrn, ct);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 

@@ -164,6 +164,7 @@ public class DeliveryService : IDeliveryService
         string? status = null,
         int page = 1,
         int pageSize = 50,
+        bool? eligibleForGrn = null,
         CancellationToken ct = default)
     {
         try
@@ -181,17 +182,21 @@ public class DeliveryService : IDeliveryService
                     .ThenInclude(i => i.PurchaseOrderItem)
                 .AsQueryable();
 
-            if (poId.HasValue && poId.Value > 0)
+            if (eligibleForGrn == true)
             {
-                query = query.Where(d => d.PoId == poId.Value);
+                query = query.Where(d => d.Status == DeliveryStatus.Arrived && !d.GoodsReceipts.Any(gr => gr.Status != GoodsReceiptStatus.Cancelled));
             }
-
-            if (!string.IsNullOrWhiteSpace(status) && !status.Equals("All", StringComparison.OrdinalIgnoreCase))
+            else if (!string.IsNullOrWhiteSpace(status) && !status.Equals("All", StringComparison.OrdinalIgnoreCase))
             {
                 if (EnumDbValue.TryParse<DeliveryStatus>(status, out var parsedStatus))
                 {
                     query = query.Where(d => d.Status == parsedStatus);
                 }
+            }
+
+            if (poId.HasValue && poId.Value > 0)
+            {
+                query = query.Where(d => d.PoId == poId.Value);
             }
 
             var totalItems = await query.CountAsync(ct);

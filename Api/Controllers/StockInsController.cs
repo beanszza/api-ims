@@ -53,7 +53,7 @@ public class StockInsController : ControllerBase
         return result.Success ? Ok(result) : BadRequest(result);
     }
 
-    /// <summary>Admin approves a Stock-In, committing items to Inventory and generating lots.</summary>
+    /// <summary>Admin approves a Stock-In (sets status to Approved, does not yet commit to inventory).</summary>
     [HttpPost("{id:int}/approve")]
     public async Task<ActionResult<ApiResponse<StockInResponse>>> Approve(int id, [FromBody] ApproveStockInRequest request)
     {
@@ -72,6 +72,14 @@ public class StockInsController : ControllerBase
             return BadRequest(ModelState);
 
         var result = await _stockInService.RejectStockInAsync(id, request);
+        return result.Success ? Ok(result) : BadRequest(result);
+    }
+
+    /// <summary>Commits an Approved Stock-In to inventory, generating inventory lots and stock ledgers.</summary>
+    [HttpPost("{id:int}/commit")]
+    public async Task<ActionResult<ApiResponse<StockInResponse>>> Commit(int id, [FromBody] CommitStockInRequest? request = null)
+    {
+        var result = await _stockInService.CommitStockInAsync(id, request);
         return result.Success ? Ok(result) : BadRequest(result);
     }
 }

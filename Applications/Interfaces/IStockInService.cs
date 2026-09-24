@@ -13,4 +13,5 @@ public interface IStockInService
     Task<ApiResponse<StockInResponse>> SubmitForApprovalAsync(int id);
     Task<ApiResponse<StockInResponse>> ApproveStockInAsync(int id, ApproveStockInRequest request);
     Task<ApiResponse<StockInResponse>> RejectStockInAsync(int id, RejectStockInRequest request);
+    Task<ApiResponse<StockInResponse>> CommitStockInAsync(int id, CommitStockInRequest? request = null);
 }
