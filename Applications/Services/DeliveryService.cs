@@ -114,10 +114,10 @@ public class DeliveryService : IDeliveryService
                     return ApiResponse<DeliveryResponse>.FailureResponse($"Shipment quantity for item '{poItem.Item?.ItemName ?? poItem.ItemId.ToString()}' must be greater than zero.");
                 }
 
-                // In-flight scheduled or in-transit shipments
+                // In-flight scheduled, in-transit, or arrived shipments pending GRN
                 var inFlightQuantity = await _context.DeliveryItems
                     .Where(di => di.PoItemId == poItem.PoItemId &&
-                                 (di.Delivery.Status == DeliveryStatus.Scheduled || di.Delivery.Status == DeliveryStatus.InTransit))
+                                 (di.Delivery.Status == DeliveryStatus.Scheduled || di.Delivery.Status == DeliveryStatus.InTransit || di.Delivery.Status == DeliveryStatus.Arrived))
                     .SumAsync(di => (decimal?)di.DeclaredQuantity, ct) ?? 0m;
 
                 var remainingQuantity = poItem.PoItemQuantity - poItem.ReceivedQuantity - inFlightQuantity;
@@ -139,6 +139,23 @@ public class DeliveryService : IDeliveryService
             await _posting.ExecuteAsync(async () =>
             {
                 _context.Deliveries.Add(delivery);
+
+                // If PO was in Approved status, transition to Ordered upon scheduling delivery
+                if (po.Status == PurchaseOrderStatus.Approved)
+                {
+                    var oldPoStatus = po.Status;
+                    po.Status = PurchaseOrderStatus.Ordered;
+                    _context.PurchaseOrders.Update(po);
+
+                    _audit.Record(
+                        nameof(PurchaseOrder),
+                        po.PoNumber,
+                        "StatusUpdated",
+                        fieldName: nameof(po.Status),
+                        oldValue: EnumDbValue.ToDbValue(oldPoStatus),
+                        newValue: EnumDbValue.ToDbValue(PurchaseOrderStatus.Ordered));
+                }
+
                 await _context.SaveChangesAsync(ct);
 
                 _audit.Record(
@@ -446,7 +463,7 @@ public class DeliveryService : IDeliveryService
             {
                 var inFlightQuantity = await _context.DeliveryItems
                     .Where(di => di.PoItemId == poi.PoItemId &&
-                                 (di.Delivery.Status == DeliveryStatus.Scheduled || di.Delivery.Status == DeliveryStatus.InTransit))
+                                 (di.Delivery.Status == DeliveryStatus.Scheduled || di.Delivery.Status == DeliveryStatus.InTransit || di.Delivery.Status == DeliveryStatus.Arrived))
                     .SumAsync(di => (decimal?)di.DeclaredQuantity, ct) ?? 0m;
 
                 var outstanding = Math.Max(0m, poi.PoItemQuantity - poi.ReceivedQuantity - inFlightQuantity);

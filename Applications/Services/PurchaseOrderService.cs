@@ -61,10 +61,10 @@ public class PurchaseOrderService : IPurchaseOrderService
                 return ApiResponse<PurchaseOrderResponse>.FailureResponse($"Supplier with ID {request.SupplierId} not found.");
             }
 
-            // Validate Expected Arrival Date (must be in future)
-            if (request.ExpectedArrivalDate <= DateTime.UtcNow)
+            // Default Expected Arrival Date if not set or not in the future
+            if (request.ExpectedArrivalDate == default || request.ExpectedArrivalDate <= DateTime.UtcNow)
             {
-                return ApiResponse<PurchaseOrderResponse>.FailureResponse("Expected arrival date must be in the future.");
+                request.ExpectedArrivalDate = DateTime.UtcNow.AddDays(7);
             }
 
             // Validate Item quantities and existence
@@ -169,6 +169,46 @@ public class PurchaseOrderService : IPurchaseOrderService
                     .ThenInclude(poi => poi.PurchaseUom)
                 .FirstOrDefaultAsync(o => o.PoId == order.PoId);
 
+            // If this PO is linked to a PR, check if all items in the PR are now fully fulfilled
+            if (order.PrId.HasValue && order.PrId.Value > 0)
+            {
+                var pr = await _context.PurchaseRequisitions
+                    .Include(p => p.Items)
+                    .FirstOrDefaultAsync(p => p.PrId == order.PrId.Value);
+
+                if (pr != null && pr.Status != PurchaseRequisitionStatus.ConvertedToPo && pr.Status != PurchaseRequisitionStatus.Closed)
+                {
+                    var prOrderedQuantities = await _context.PurchaseOrders
+                        .Where(po => po.PrId == pr.PrId
+                            && po.Status != PurchaseOrderStatus.Cancelled
+                            && po.Status != PurchaseOrderStatus.Rejected)
+                        .SelectMany(po => po.PurchaseOrderItems)
+                        .GroupBy(poi => poi.ItemId)
+                        .Select(g => new { ItemId = g.Key, OrderedQty = g.Sum(poi => poi.PoItemQuantity) })
+                        .ToDictionaryAsync(x => x.ItemId, x => x.OrderedQty);
+
+                    bool allFulfilled = pr.Items.All(item =>
+                        prOrderedQuantities.TryGetValue(item.ItemId, out var ordered) && ordered >= item.RequestedQuantity);
+
+                    if (allFulfilled)
+                    {
+                        var oldPrStatus = pr.Status;
+                        pr.Status = PurchaseRequisitionStatus.ConvertedToPo;
+                        pr.UpdatedAt = DateTime.UtcNow;
+                        _context.PurchaseRequisitions.Update(pr);
+                        await _context.SaveChangesAsync();
+
+                        _audit.Record(
+                            nameof(PurchaseRequisition),
+                            pr.PrNumber,
+                            "ConvertedToPurchaseOrders",
+                            fieldName: "Status",
+                            oldValue: EnumDbValue.ToDbValue(oldPrStatus),
+                            newValue: "Converted to PO");
+                    }
+                }
+            }
+
             var response = MapToResponse(reloadedOrder!);
             _logger.LogInformation("Purchase order created successfully with ID {PoId}", order.PoId);
             return ApiResponse<PurchaseOrderResponse>.SuccessResponse(response, "Purchase order created successfully");
@@ -219,6 +259,7 @@ public class PurchaseOrderService : IPurchaseOrderService
 
             var query = _context.PurchaseOrders
                 .Include(o => o.Supplier)
+                .Include(o => o.PurchaseRequisition)
                 .Include(o => o.PurchaseOrderItems)
                     .ThenInclude(poi => poi.Item)
                         .ThenInclude(i => i!.StockUom)
@@ -232,7 +273,7 @@ public class PurchaseOrderService : IPurchaseOrderService
                     && o.PurchaseOrderItems.Any(poi =>
                         poi.PoItemQuantity > poi.ReceivedQuantity +
                             (_context.DeliveryItems
-                                .Where(di => di.PoItemId == poi.PoItemId && (di.Delivery.Status == DeliveryStatus.Scheduled || di.Delivery.Status == DeliveryStatus.InTransit))
+                                .Where(di => di.PoItemId == poi.PoItemId && (di.Delivery.Status == DeliveryStatus.Scheduled || di.Delivery.Status == DeliveryStatus.InTransit || di.Delivery.Status == DeliveryStatus.Arrived))
                                 .Sum(di => (decimal?)di.DeclaredQuantity) ?? 0m)
                     ));
             }
@@ -400,6 +441,40 @@ public class PurchaseOrderService : IPurchaseOrderService
                     fieldName: nameof(order.Status),
                     oldValue: EnumDbValue.ToDbValue(oldStatus),
                     newValue: EnumDbValue.ToDbValue(requestedStatus));
+
+                if (requestedStatus == PurchaseOrderStatus.Cancelled || requestedStatus == PurchaseOrderStatus.Rejected)
+                {
+                    if (order.PrId.HasValue && order.PrId.Value > 0)
+                    {
+                        var pr = await _context.PurchaseRequisitions
+                            .Include(p => p.Items)
+                            .FirstOrDefaultAsync(p => p.PrId == order.PrId.Value);
+
+                        if (pr != null && pr.Status == PurchaseRequisitionStatus.ConvertedToPo)
+                        {
+                            var prOrderedQuantities = await _context.PurchaseOrders
+                                .Where(po => po.PrId == pr.PrId
+                                    && po.PoId != order.PoId
+                                    && po.Status != PurchaseOrderStatus.Cancelled
+                                    && po.Status != PurchaseOrderStatus.Rejected)
+                                .SelectMany(po => po.PurchaseOrderItems)
+                                .GroupBy(poi => poi.ItemId)
+                                .Select(g => new { ItemId = g.Key, OrderedQty = g.Sum(poi => poi.PoItemQuantity) })
+                                .ToDictionaryAsync(x => x.ItemId, x => x.OrderedQty);
+
+                            bool allFulfilled = pr.Items.All(item =>
+                                prOrderedQuantities.TryGetValue(item.ItemId, out var ordered) && ordered >= item.RequestedQuantity);
+
+                            if (!allFulfilled)
+                            {
+                                pr.Status = PurchaseRequisitionStatus.Approved;
+                                pr.UpdatedAt = DateTime.UtcNow;
+                                _context.PurchaseRequisitions.Update(pr);
+                                await _context.SaveChangesAsync();
+                            }
+                        }
+                    }
+                }
             });
 
             var response = MapToResponse(order);
@@ -453,6 +528,10 @@ public class PurchaseOrderService : IPurchaseOrderService
             }
 
             order.SupplierId = request.SupplierId;
+            if (request.ExpectedArrivalDate == default || request.ExpectedArrivalDate <= DateTime.UtcNow)
+            {
+                request.ExpectedArrivalDate = DateTime.UtcNow.AddDays(7);
+            }
             order.ExpectedArrivalDate = request.ExpectedArrivalDate;
             order.PaymentType = request.PaymentType;
 
@@ -492,12 +571,51 @@ public class PurchaseOrderService : IPurchaseOrderService
                 order.TotalAmount = poItems.Sum(p => p.TotalPrice);
             }
 
+            if (!string.IsNullOrWhiteSpace(request.InitialStatus)
+                && EnumDbValue.TryParse<PurchaseOrderStatus>(request.InitialStatus, out var parsedStatus)
+                && parsedStatus != PurchaseOrderStatus.Unspecified)
+            {
+                order.Status = parsedStatus;
+            }
+
             _context.PurchaseOrders.Update(order);
             await _context.SaveChangesAsync();
+
+            // If linked to a PR, check fulfillment again
+            if (order.PrId.HasValue && order.PrId.Value > 0)
+            {
+                var pr = await _context.PurchaseRequisitions
+                    .Include(p => p.Items)
+                    .FirstOrDefaultAsync(p => p.PrId == order.PrId.Value);
+
+                if (pr != null && pr.Status != PurchaseRequisitionStatus.Closed)
+                {
+                    var prOrderedQuantities = await _context.PurchaseOrders
+                        .Where(po => po.PrId == pr.PrId
+                            && po.Status != PurchaseOrderStatus.Cancelled
+                            && po.Status != PurchaseOrderStatus.Rejected)
+                        .SelectMany(po => po.PurchaseOrderItems)
+                        .GroupBy(poi => poi.ItemId)
+                        .Select(g => new { ItemId = g.Key, OrderedQty = g.Sum(poi => poi.PoItemQuantity) })
+                        .ToDictionaryAsync(x => x.ItemId, x => x.OrderedQty);
+
+                    bool allFulfilled = pr.Items.All(item =>
+                        prOrderedQuantities.TryGetValue(item.ItemId, out var ordered) && ordered >= item.RequestedQuantity);
+
+                    if (allFulfilled && pr.Status != PurchaseRequisitionStatus.ConvertedToPo)
+                    {
+                        pr.Status = PurchaseRequisitionStatus.ConvertedToPo;
+                        pr.UpdatedAt = DateTime.UtcNow;
+                        _context.PurchaseRequisitions.Update(pr);
+                        await _context.SaveChangesAsync();
+                    }
+                }
+            }
 
             // Reload details
             var reloadedOrder = await _context.PurchaseOrders
                 .Include(o => o.Supplier)
+                .Include(o => o.PurchaseRequisition)
                 .Include(o => o.PurchaseOrderItems)
                     .ThenInclude(poi => poi.Item)
                         .ThenInclude(i => i!.StockUom)

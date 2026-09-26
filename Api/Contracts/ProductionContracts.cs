@@ -10,6 +10,7 @@ public class CreateProductionBatchRequest
 
     public DateTime ScheduleDate { get; set; }
     public string AssignedCook { get; set; } = string.Empty;
+    public string? Purpose { get; set; }
 }
 
 public class ProductionBatchResponse
@@ -20,9 +21,14 @@ public class ProductionBatchResponse
     public string RecipeName { get; set; } = string.Empty;
     public int ProductId { get; set; }
     public string ProductName { get; set; } = string.Empty;
+    public string Variant { get; set; } = string.Empty;
+    public string Purpose { get; set; } = string.Empty;
     public decimal BatchMultiplier { get; set; }
     public decimal EstimatedQuantity { get; set; }
     public decimal ActualQuantity { get; set; }
+    public decimal ScrapQuantity { get; set; }
+    public string? ScrapReason { get; set; }
+    public int? FgLotId { get; set; }
     public DateTime ProductionDate { get; set; }
     public string Stage { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
@@ -31,6 +37,11 @@ public class ProductionBatchResponse
     public string RejectionReason { get; set; } = string.Empty;
     public string ImageUrl { get; set; } = string.Empty;
     public string Notes { get; set; } = string.Empty;
+}
+
+public class RejectBatchRequest
+{
+    public string Reason { get; set; } = string.Empty;
 }
 
 public class UpdateStageRequest

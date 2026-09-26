@@ -31,5 +31,8 @@ public enum BatchStatus
     InventoryAdded = 6,
 
     [DbValue("Cancelled")]
-    Cancelled = 7
+    Cancelled = 7,
+
+    [DbValue("Approved")]
+    Approved = 8
 }

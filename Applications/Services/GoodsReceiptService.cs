@@ -119,7 +119,7 @@ public class GoodsReceiptService : IGoodsReceiptService
                 return ApiResponse<GoodsReceiptResponse>.FailureResponse("A GRN can only be created for a delivery that has arrived at the Commissary.");
 
             var po = delivery.PurchaseOrder;
-            if (po.Status is not (PurchaseOrderStatus.Approved or PurchaseOrderStatus.Ordered or PurchaseOrderStatus.Arrived))
+            if (po.Status is not (PurchaseOrderStatus.Approved or PurchaseOrderStatus.Ordered or PurchaseOrderStatus.Arrived or PurchaseOrderStatus.Completed))
                 return ApiResponse<GoodsReceiptResponse>.FailureResponse($"Cannot receive goods against a {po.Status} purchase order.");
 
             if (request.Items == null || !request.Items.Any())
@@ -305,7 +305,7 @@ public class GoodsReceiptService : IGoodsReceiptService
                 return ApiResponse<GoodsReceiptResponse>.FailureResponse($"GRN {grn.GrnNumber} is already in status {grn.Status} and cannot be posted.");
             if (grn.Delivery == null || grn.Delivery.Status != DeliveryStatus.Arrived)
                 return ApiResponse<GoodsReceiptResponse>.FailureResponse("The linked delivery must still be Arrived before posting this GRN.");
-            if (grn.PurchaseOrder.Status is not (PurchaseOrderStatus.Approved or PurchaseOrderStatus.Ordered or PurchaseOrderStatus.Arrived))
+            if (grn.PurchaseOrder.Status is not (PurchaseOrderStatus.Approved or PurchaseOrderStatus.Ordered or PurchaseOrderStatus.Arrived or PurchaseOrderStatus.Completed))
                 return ApiResponse<GoodsReceiptResponse>.FailureResponse("The linked purchase order is not eligible for receiving.");
 
             var actor = _currentUser.Current;

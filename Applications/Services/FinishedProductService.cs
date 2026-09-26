@@ -34,7 +34,8 @@ public class FinishedProductService : IFinishedProductService
                     SellingPrice = fp.SellingPrice,
                     Sku = fp.Sku,
                     ItemName = fp.Item != null ? fp.Item.ItemName : string.Empty,
-                    Variant = fp.Variant
+                    Variant = fp.Variant,
+                    ImageUrl = fp.ImageUrl ?? string.Empty
                 })
                 .ToListAsync();
 
@@ -51,37 +52,45 @@ public class FinishedProductService : IFinishedProductService
     {
         try
         {
-            var category = await _context.Categories.FirstOrDefaultAsync(c => c.CategoryName.ToLower().Contains("finished good"));
-            if (category == null)
+            var trimmedName = request.ProductName?.Trim() ?? string.Empty;
+            var existingItem = await _context.Items.FirstOrDefaultAsync(i => i.ItemName.ToLower() == trimmedName.ToLower());
+            var item = existingItem;
+
+            if (item == null)
             {
-                category = new Domains.Entities.Category { CategoryName = "Finished Good", Description = "Finished Goods" };
-                _context.Categories.Add(category);
+                var category = await _context.Categories.FirstOrDefaultAsync(c => c.CategoryName.ToLower().Contains("finished good"));
+                if (category == null)
+                {
+                    category = new Domains.Entities.Category { CategoryName = "Finished Good", Description = "Finished Goods" };
+                    _context.Categories.Add(category);
+                    await _context.SaveChangesAsync();
+                }
+
+                var uom = await _context.UnitOfMeasures.FirstOrDefaultAsync(u => u.Abbreviation == "pcs") 
+                          ?? await _context.UnitOfMeasures.FirstOrDefaultAsync();
+
+                item = new Domains.Entities.Item
+                {
+                    ItemName = trimmedName,
+                    UomId = uom?.UomId ?? 1,
+                    StockUomId = uom?.UomId ?? 1,
+                    CategoryId = category?.CategoryId ?? 1,
+                    MinStockLevel = 0,
+                    MaxStockLevel = 100,
+                    IsActive = true
+                };
+
+                _context.Items.Add(item);
                 await _context.SaveChangesAsync();
             }
 
-            var uom = await _context.UnitOfMeasures.FirstOrDefaultAsync(u => u.Abbreviation == "pcs") 
-                      ?? await _context.UnitOfMeasures.FirstOrDefaultAsync();
-
-            var newItem = new Domains.Entities.Item
-            {
-                ItemName = request.ProductName,
-                UomId = uom?.UomId ?? 1,
-                StockUomId = uom?.UomId ?? 1,
-                CategoryId = category?.CategoryId ?? 1,
-                MinStockLevel = 0,
-                MaxStockLevel = 100,
-                IsActive = true
-            };
-
-            _context.Items.Add(newItem);
-            await _context.SaveChangesAsync();
-
             var newProduct = new Domains.Entities.FinishedProduct
             {
-                ItemId = newItem.ItemId,
-                SellingPrice = 0,
-                Sku = "",
-                Variant = request.Variant
+                ItemId = item.ItemId,
+                SellingPrice = request.SellingPrice,
+                Sku = request.Sku,
+                Variant = request.Variant,
+                ImageUrl = request.ImageUrl ?? string.Empty
             };
 
             _context.FinishedProducts.Add(newProduct);
@@ -93,8 +102,9 @@ public class FinishedProductService : IFinishedProductService
                 ItemId = newProduct.ItemId,
                 SellingPrice = newProduct.SellingPrice,
                 Sku = newProduct.Sku,
-                ItemName = newItem.ItemName,
-                Variant = newProduct.Variant
+                ItemName = item.ItemName,
+                Variant = newProduct.Variant,
+                ImageUrl = newProduct.ImageUrl
             };
 
             return ApiResponse<FinishedProductResponse>.SuccessResponse(response);
@@ -103,6 +113,28 @@ public class FinishedProductService : IFinishedProductService
         {
             _logger.LogError(ex, "Error creating finished product.");
             return ApiResponse<FinishedProductResponse>.FailureResponse("An error occurred while creating finished product.");
+        }
+    }
+
+    public async Task<ApiResponse<bool>> DeleteFinishedProductAsync(int id)
+    {
+        try
+        {
+            var product = await _context.FinishedProducts.FindAsync(id);
+            if (product == null)
+            {
+                return ApiResponse<bool>.FailureResponse("Finished product variant not found.");
+            }
+
+            _context.FinishedProducts.Remove(product);
+            await _context.SaveChangesAsync();
+
+            return ApiResponse<bool>.SuccessResponse(true);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error deleting finished product.");
+            return ApiResponse<bool>.FailureResponse("Cannot delete product variant because it may be referenced in recipes or production batches.");
         }
     }
 
@@ -117,6 +149,12 @@ public class FinishedProductService : IFinishedProductService
             }
 
             product.Variant = request.Variant;
+            product.SellingPrice = request.SellingPrice;
+            product.Sku = request.Sku;
+            if (request.ImageUrl != null)
+            {
+                product.ImageUrl = request.ImageUrl;
+            }
 
             if (product.Item != null)
             {
@@ -132,7 +170,8 @@ public class FinishedProductService : IFinishedProductService
                 SellingPrice = product.SellingPrice,
                 Sku = product.Sku,
                 ItemName = product.Item?.ItemName ?? string.Empty,
-                Variant = product.Variant
+                Variant = product.Variant,
+                ImageUrl = product.ImageUrl ?? string.Empty
             };
 
             return ApiResponse<FinishedProductResponse>.SuccessResponse(response);

@@ -8,4 +8,5 @@ public class FinishedProductResponse
     public string Sku { get; set; } = string.Empty;
     public string ItemName { get; set; } = string.Empty;
     public string Variant { get; set; } = string.Empty;
+    public string ImageUrl { get; set; } = string.Empty;
 }

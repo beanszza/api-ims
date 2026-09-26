@@ -44,6 +44,62 @@ public class ProductionBatchesController : ControllerBase
         }
     }
 
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetBatch(int id)
+    {
+        try
+        {
+            var result = await _productionService.GetBatchByIdAsync(id);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPut("{id}/approve")]
+    public async Task<IActionResult> ApproveBatch(int id)
+    {
+        try
+        {
+            var result = await _productionService.ApproveBatchAsync(id);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPut("{id}/reject")]
+    public async Task<IActionResult> RejectBatch(int id, [FromBody] RejectBatchRequest request)
+    {
+        try
+        {
+            var result = await _productionService.RejectBatchAsync(id, request.Reason);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
+    [HttpPut("{id}/cancel")]
+    public async Task<IActionResult> CancelBatch(int id)
+    {
+        try
+        {
+            var result = await _productionService.CancelBatchAsync(id);
+            return Ok(result);
+        }
+        catch (Exception ex)
+        {
+            return BadRequest(new { message = ex.Message });
+        }
+    }
+
     [HttpPut("{id}/stage")]
     public async Task<IActionResult> UpdateStage(int id, [FromBody] UpdateStageRequest request)
     {

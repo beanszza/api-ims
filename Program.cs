@@ -367,6 +367,8 @@ if (app.Environment.IsDevelopment())
                 ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""Notes"" text;
                 ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""AdminNotes"" text;
                 ALTER TABLE ""PurchaseRequisitions"" ADD COLUMN IF NOT EXISTS ""UpdatedAt"" timestamp with time zone;
+                ALTER TABLE ""FinishedProducts"" ADD COLUMN IF NOT EXISTS ""ImageUrl"" text;
+                UPDATE ""FinishedProducts"" SET ""ImageUrl"" = '' WHERE ""ImageUrl"" IS NULL;
             ");
         }
         catch (Exception ex)

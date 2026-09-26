@@ -63,7 +63,12 @@ public class ProductionService : IProductionService
             .FirstOrDefaultAsync(r => r.RecipeId == request.RecipeId);
 
         if (recipe == null) throw new InvalidOperationException("Recipe not found.");
-        if (recipe.ProductId != request.ProductId) throw new InvalidOperationException("Recipe does not match the selected product.");
+
+        var product = await _context.FinishedProducts
+            .Include(p => p.Item)
+            .FirstOrDefaultAsync(p => p.ProductId == request.ProductId);
+
+        if (product == null) throw new InvalidOperationException("Selected finished product not found.");
 
         var estimatedQuantity = recipe.OutputQuantity * request.BatchMultiplier;
         var batchNumber = await _documentNumbers.NextAsync(DocumentType.ProductionOrder, request.ScheduleDate);
@@ -80,7 +85,10 @@ public class ProductionService : IProductionService
             Stage = ProductionStage.Preparation,
             Status = BatchStatus.Scheduled,
             AssignedCook = request.AssignedCook,
-            QualityStatus = QcStatus.Pending
+            QualityStatus = QcStatus.Pending,
+            Notes = request.Purpose ?? string.Empty,
+            Product = product,
+            Recipe = recipe
         };
 
         _context.ProductionBatches.Add(batch);
@@ -94,18 +102,107 @@ public class ProductionService : IProductionService
             oldValue: null,
             newValue: "Scheduled");
 
-        return MapToResponse(batch, recipe.RecipeName, recipe.Product?.Item?.ItemName ?? "");
+        return MapToResponse(batch, recipe.RecipeName, product.Item?.ItemName ?? recipe.Product?.Item?.ItemName ?? "");
     }
 
     public async Task<IEnumerable<ProductionBatchResponse>> GetAllBatchesAsync()
     {
         var batches = await _context.ProductionBatches
             .Include(b => b.Recipe).ThenInclude(r => r!.Product).ThenInclude(p => p!.Item)
+            .Include(b => b.Product).ThenInclude(p => p!.Item)
             .Include(b => b.FgLot)
             .OrderByDescending(b => b.BatchId)
             .ToListAsync();
 
-        return batches.Select(b => MapToResponse(b, b.Recipe?.RecipeName ?? "", b.Recipe?.Product?.Item?.ItemName ?? ""));
+        return batches.Select(b => MapToResponse(b, b.Recipe?.RecipeName ?? "", b.Product?.Item?.ItemName ?? b.Recipe?.Product?.Item?.ItemName ?? ""));
+    }
+
+    public async Task<ProductionBatchResponse> GetBatchByIdAsync(int batchId)
+    {
+        var batch = await _context.ProductionBatches
+            .Include(b => b.Recipe).ThenInclude(r => r!.Product).ThenInclude(p => p!.Item)
+            .Include(b => b.Product).ThenInclude(p => p!.Item)
+            .Include(b => b.FgLot)
+            .FirstOrDefaultAsync(b => b.BatchId == batchId);
+
+        if (batch == null) throw new InvalidOperationException("Batch not found.");
+
+        return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Product?.Item?.ItemName ?? batch.Recipe?.Product?.Item?.ItemName ?? "");
+    }
+
+    public async Task<ProductionBatchResponse> ApproveBatchAsync(int batchId)
+    {
+        var batch = await _context.ProductionBatches
+            .Include(b => b.Recipe).ThenInclude(r => r!.Product).ThenInclude(p => p!.Item)
+            .Include(b => b.Product).ThenInclude(p => p!.Item)
+            .FirstOrDefaultAsync(b => b.BatchId == batchId);
+
+        if (batch == null) throw new InvalidOperationException("Batch not found.");
+
+        _statusGuard.EnsureCanTransition(batch.Status, BatchStatus.Approved);
+        batch.Status = BatchStatus.Approved;
+        await _context.SaveChangesAsync();
+
+        _audit.Record(
+            nameof(ProductionBatch),
+            batch.BatchNumber,
+            "BatchApproved",
+            fieldName: "Status",
+            oldValue: "Scheduled",
+            newValue: "Approved");
+
+        return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Product?.Item?.ItemName ?? batch.Recipe?.Product?.Item?.ItemName ?? "");
+    }
+
+    public async Task<ProductionBatchResponse> RejectBatchAsync(int batchId, string reason)
+    {
+        var batch = await _context.ProductionBatches
+            .Include(b => b.Recipe).ThenInclude(r => r!.Product).ThenInclude(p => p!.Item)
+            .Include(b => b.Product).ThenInclude(p => p!.Item)
+            .FirstOrDefaultAsync(b => b.BatchId == batchId);
+
+        if (batch == null) throw new InvalidOperationException("Batch not found.");
+
+        _statusGuard.EnsureCanTransition(batch.Status, BatchStatus.Rejected);
+        batch.Status = BatchStatus.Rejected;
+        batch.RejectionReason = reason;
+        await _context.SaveChangesAsync();
+
+        _audit.Record(
+            nameof(ProductionBatch),
+            batch.BatchNumber,
+            "BatchRejected",
+            fieldName: "Status",
+            oldValue: EnumDbValue.ToDbValue(batch.Status),
+            newValue: "Rejected");
+
+        return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Product?.Item?.ItemName ?? batch.Recipe?.Product?.Item?.ItemName ?? "");
+    }
+
+    public async Task<ProductionBatchResponse> CancelBatchAsync(int batchId)
+    {
+        var batch = await _context.ProductionBatches
+            .Include(b => b.Recipe).ThenInclude(r => r!.Product).ThenInclude(p => p!.Item)
+            .Include(b => b.Product).ThenInclude(p => p!.Item)
+            .FirstOrDefaultAsync(b => b.BatchId == batchId);
+
+        if (batch == null) throw new InvalidOperationException("Batch not found.");
+
+        _statusGuard.EnsureCanTransition(batch.Status, BatchStatus.Cancelled);
+        var oldStatus = batch.Status;
+        batch.Status = BatchStatus.Cancelled;
+        batch.Stage = ProductionStage.Cancelled;
+        await _context.SaveChangesAsync();
+
+        _audit.Record(
+            nameof(ProductionBatch),
+            batch.BatchNumber,
+            "BatchCancelled",
+            fieldName: "Status",
+            oldValue: EnumDbValue.ToDbValue(oldStatus),
+            newValue: "Cancelled");
+
+        return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Product?.Item?.ItemName ?? batch.Recipe?.Product?.Item?.ItemName ?? "");
     }
 
     public async Task<ProductionBatchResponse> UpdateStageAsync(int batchId, UpdateStageRequest request)
@@ -127,7 +224,7 @@ public class ProductionService : IProductionService
 
         var isQaCheckpoint = requestedStage is ProductionStage.QaReview or ProductionStage.QualityControl;
 
-        bool isStarting = batch.Status == BatchStatus.Scheduled
+        bool isStarting = (batch.Status == BatchStatus.Scheduled || batch.Status == BatchStatus.Approved)
             && !isQaCheckpoint
             && requestedStage != ProductionStage.Completed
             && requestedStage != ProductionStage.Cancelled;
@@ -374,13 +471,14 @@ public class ProductionService : IProductionService
             return batch;
         });
 
-        return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Recipe?.Product?.Item?.ItemName ?? "");
+        return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Product?.Item?.ItemName ?? batch.Recipe?.Product?.Item?.ItemName ?? "");
     }
 
     public async Task<ProductionBatchResponse> AddBatchToInventoryAsync(int batchId)
     {
         var batch = await _context.ProductionBatches
             .Include(b => b.Recipe).ThenInclude(r => r!.Product).ThenInclude(p => p!.Item)
+            .Include(b => b.Product).ThenInclude(p => p!.Item)
             .Include(b => b.FgLot)
             .FirstOrDefaultAsync(b => b.BatchId == batchId);
 
@@ -392,13 +490,14 @@ public class ProductionService : IProductionService
         batch.Status = BatchStatus.InventoryAdded;
         await _context.SaveChangesAsync();
 
-        return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Recipe?.Product?.Item?.ItemName ?? "");
+        return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Product?.Item?.ItemName ?? batch.Recipe?.Product?.Item?.ItemName ?? "");
     }
 
     public async Task<ProductionBatchResponse> UploadImageAsync(int batchId, IFormFile file)
     {
         var batch = await _context.ProductionBatches
             .Include(b => b.Recipe).ThenInclude(r => r!.Product).ThenInclude(p => p!.Item)
+            .Include(b => b.Product).ThenInclude(p => p!.Item)
             .FirstOrDefaultAsync(b => b.BatchId == batchId);
 
         if (batch == null) throw new InvalidOperationException("Batch not found.");
@@ -417,7 +516,7 @@ public class ProductionService : IProductionService
         batch.ImageUrl = $"/uploads/batches/{uniqueFileName}";
         await _context.SaveChangesAsync();
 
-        return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Recipe?.Product?.Item?.ItemName ?? "");
+        return MapToResponse(batch, batch.Recipe?.RecipeName ?? "", batch.Product?.Item?.ItemName ?? batch.Recipe?.Product?.Item?.ItemName ?? "");
     }
 
     public async Task<DashboardSummaryResponse> GetDashboardSummaryAsync()
@@ -475,9 +574,14 @@ public class ProductionService : IProductionService
         RecipeName = recipeName,
         ProductId = b.ProductId,
         ProductName = productName,
+        Variant = b.Product?.Variant ?? b.Recipe?.Product?.Variant ?? string.Empty,
+        Purpose = b.Notes,
         BatchMultiplier = b.BatchMultiplier,
         EstimatedQuantity = b.EstimatedQuantity,
         ActualQuantity = b.ActualQuantity,
+        ScrapQuantity = b.ScrapQuantity,
+        ScrapReason = b.ScrapReason,
+        FgLotId = b.FgLotId,
         ProductionDate = b.ProductionDate,
         Stage = EnumDbValue.ToDbValue(b.Stage),
         Status = EnumDbValue.ToDbValue(b.Status),

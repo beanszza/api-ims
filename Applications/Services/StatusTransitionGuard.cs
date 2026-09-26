@@ -145,7 +145,8 @@ public sealed class StatusTransitionGuard : IStatusTransitionGuard
     private static Dictionary<BatchStatus, BatchStatus[]> BuildBatchMap() => new()
     {
         [BatchStatus.Unspecified] = [BatchStatus.Scheduled, BatchStatus.Cancelled],
-        [BatchStatus.Scheduled] = [BatchStatus.InProgress, BatchStatus.Cancelled],
+        [BatchStatus.Scheduled] = [BatchStatus.Approved, BatchStatus.InProgress, BatchStatus.Rejected, BatchStatus.Cancelled],
+        [BatchStatus.Approved] = [BatchStatus.InProgress, BatchStatus.Cancelled],
         [BatchStatus.InProgress] =
         [
             BatchStatus.PassedQa,
@@ -233,7 +234,7 @@ public sealed class StatusTransitionGuard : IStatusTransitionGuard
 
     private static Dictionary<DeliveryStatus, DeliveryStatus[]> BuildDeliveryMap() => new()
     {
-        [DeliveryStatus.Scheduled] = [DeliveryStatus.InTransit, DeliveryStatus.Cancelled],
+        [DeliveryStatus.Scheduled] = [DeliveryStatus.InTransit, DeliveryStatus.Arrived, DeliveryStatus.Cancelled],
         [DeliveryStatus.InTransit] = [DeliveryStatus.Arrived, DeliveryStatus.Cancelled],
         [DeliveryStatus.Arrived] = [],
         [DeliveryStatus.Cancelled] = []

@@ -6,4 +6,5 @@ public class CreateFinishedProductRequest
     public string Variant { get; set; } = string.Empty;
     public decimal SellingPrice { get; set; }
     public string Sku { get; set; } = string.Empty;
+    public string? ImageUrl { get; set; }
 }
